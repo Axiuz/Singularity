@@ -124,7 +124,7 @@ este repo como plantilla).
 | **Tablero** | Plan activo como kanban con barra de progreso, e historial de delegaciones |
 | **Sesión** | Una terminal por carpeta, con tu shell de siempre; varias abiertas a la vez, una visible |
 | **Editor** | Monaco con el árbol del proyecto: abre, edita y guarda con ⌘S, solo dentro de tus carpetas de Proyectos |
-| **Mapa** | Grafo de un proyecto: un punto por función, unidos por quién llama a quién. Dice dónde está definida y dónde se usa, y copia ese contexto para pegárselo a Claude Code |
+| **Mapa** | Grafo de un proyecto: un punto por función, unidos por quién llama a quién. Dice dónde está definida y dónde se usa, y copia ese contexto para pegárselo a Claude Code. Dos motores: el interno y **graphify** (AST real y comunidades, sin LLM), que deja su `graphify-out/` en el proyecto para que `/graphify query` use el mismo grafo |
 | **Agentes** | Crear, editar, activar o eliminar agentes |
 | **Consola** | Probar un agente a mano (⌘↵ para enviar) |
 | **Conexión** | Instrucciones para `CLAUDE.md`, URL de LM Studio, modelo y paralelismo |
@@ -657,6 +657,7 @@ orquestador-agentes/          raíz del repo
   orquestador-agentes/
     server.js                 backend completo
     codegraph.js              escáner estático para el mapa de código
+    graphifymap.js            traduce el graph.json de graphify al formato del mapa
     kanban.js                 columnas del tablero y colocación de tarjetas
     git.js                    estado y operaciones de Git de una carpeta
     commitplan.js             parser del plan de commits del documenter
