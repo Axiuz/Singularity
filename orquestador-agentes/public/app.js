@@ -1155,6 +1155,7 @@ function updateRunStream(run) {
 // aparte porque es la mayor parte del total y cuesta distinto que lo demás.
 const DEFAULT_SESSION_LIMIT = 100000000;
 const DEFAULT_WEEKLY_LIMIT = 600000000;
+const DEFAULT_SESSION_SKILLS = ["i-have-adhd:i-have-adhd", "ponytail:ponytail"];
 
 // "100M", "600 000 000" o un número pelado; 0 o basura = sin tope
 function parseTokenLimit(value) {
@@ -2470,6 +2471,7 @@ async function loadConfig() {
   $("#cfgWeeklyLimit").value = formatTokens(config.claude_weekly_limit ?? DEFAULT_WEEKLY_LIMIT);
   $("#cfgRemoteControl").checked = config.claude_remote_control !== false;
   $("#cfgCardPrompts").checked = config.claude_card_prompts !== false;
+  $("#cfgSessionSkills").value = (config.claude_session_skills ?? DEFAULT_SESSION_SKILLS).join(", ");
   selectedParallel = config.max_parallel || 1;
   $("#infoPort").textContent = `:${config.app_port || 3131}`;
   renderParallel();
@@ -2488,6 +2490,7 @@ $("#saveConfigBtn").addEventListener("click", async () => {
       claude_weekly_limit: parseTokenLimit($("#cfgWeeklyLimit").value),
       claude_remote_control: $("#cfgRemoteControl").checked,
       claude_card_prompts: $("#cfgCardPrompts").checked,
+      claude_session_skills: $("#cfgSessionSkills").value.split(",").map((s) => s.trim()).filter(Boolean),
     }),
   });
   await loadConfig();

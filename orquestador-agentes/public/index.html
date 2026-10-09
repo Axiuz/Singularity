@@ -154,6 +154,10 @@
           <button data-mode="fn" class="active">Funciones</button>
           <button data-mode="file">Archivos</button>
         </div>
+        <div class="segmented map-modes" id="mapEngine">
+          <button data-engine="interno" class="active">Interno</button>
+          <button data-engine="graphify">graphify</button>
+        </div>
         <button class="btn" id="mapRefreshBtn">Reanalizar</button>
         <span class="mono muted small" id="mapStats"></span>
       </div>
@@ -317,6 +321,8 @@
               <span class="track"></span>
               <span class="tlabel">MANDAR MIS TARJETAS DEL TABLERO A CLAUDE</span>
             </label>
+            <label class="field-label" for="cfgSessionSkills">SKILLS AL INICIAR SESIÓN</label>
+            <input id="cfgSessionSkills" type="text" class="mono" placeholder="i-have-adhd:i-have-adhd, ponytail:ponytail" />
             <div class="help">Remote Control se aplica a las sesiones que se abran después de guardar. Las tarjetas escritas o movidas a mano llegan a Claude al terminar su turno, o escritas en la sesión si está parado.</div>
           </div>
           <div>

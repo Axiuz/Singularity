@@ -19,3 +19,6 @@ orquestador-agentes/data/notes.json
 # Extensiones instaladas desde Open VSX y cuál está activa: son del usuario
 orquestador-agentes/data/extensions/
 orquestador-agentes/data/extensions.json
+
+# Grafo que genera graphify desde el Mapa o la skill /graphify
+graphify-out/

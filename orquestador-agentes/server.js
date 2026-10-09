@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const child_process = require("child_process");
 const pty = require("node-pty");
 const { buildGraph } = require("./codegraph");
+const { toMapGraph } = require("./graphifymap");
 const { COLUMNS, COLUMN_AFTER_RUN, columnFor, placeStep } = require("./kanban");
 const safepath = require("./safepath");
 const claudeusage = require("./claudeusage");
@@ -783,6 +784,16 @@ app.get("/api/stream", (req, res) => {
 // ---- Instrucciones para Claude Code ----
 // Fuente única: la pestaña Conexión las muestra para copiarlas y cada sesión de
 // terminal las recibe con --append-system-prompt. Si cambias la API, cámbialas aquí.
+const DEFAULT_SESSION_SKILLS = ["i-have-adhd:i-have-adhd", "ponytail:ponytail"];
+
+// Devuelve una lista de habilidades de sesión (plugin:skill) válidas, por defecto
+// i-have-adhd y ponytail. Filtra solo nombres que coincidan con el patrón
+// de habilidad (nombre:identificador), porque el texto acaba en el system prompt.
+function sessionSkills() {
+  const list = Array.isArray(config.claude_session_skills) ? config.claude_session_skills : DEFAULT_SESSION_SKILLS;
+  return list.map((s) => String(s).trim().replace(/^\//, "")).filter((s) => /^[\w.-]+(:[\w.-]+)?$/.test(s));
+}
+
 function buildInstructions(project) {
   const port = config.app_port || 3131;
   const enabled = getAgents().filter((a) => a.enabled !== false);
@@ -857,12 +868,19 @@ algo importante, entonces sí lo añades: es una línea, no un archivo comentado
     ? "\n   Cierra con el documenter: los comentarios del código que tocaste y el\n   plan de commits."
     : "";
 
+  const skills = sessionSkills();
+  const skillsNote = skills.length
+    ? `Al empezar la sesión, antes de responder nada, carga con la herramienta Skill:
+${skills.map((s) => `- ${s}`).join("\n")}
+Aplícalas durante toda la sesión, salvo que te pida apagarlas.
+`
+    : "";
   const sessionNote = project
     ? `
 ## Esta sesión
 Corres dentro de Singularity, en la carpeta ${project}.
 Cuando registres un plan usa "project": "${project}".
-`
+${skillsNote}`
     : "";
 
   return `# Flujo con agentes de IA locales
@@ -1423,25 +1441,75 @@ const GRAPH_CACHE_MS = 5 * 60 * 1000;
 const GRAPH_CACHE_MAX = 4; // un grafo grande pesa megas: no guardes muchos
 const graphCache = new Map();
 
-app.get("/api/graph", (req, res) => {
-  const dir = resolveDir(req.query.path);
-  if (!dir) return res.status(400).json({ error: "Falta el parámetro path" });
+const GRAPHIFY_TIMEOUT_MS = 120 * 1000;
+
+// Busca el binario graphify en las rutas definidas en devserver.binDirs()
+// y en ~/.local/bin, donde uv tool install lo deja instalado, porque el
+// servidor no hereda el PATH del shell de login.
+function findGraphify() {
+  for (const dir of [...devserver.binDirs(), path.join(os.homedir(), ".local", "bin")]) {
+    const full = path.join(dir, "graphify");
+    try {
+      fs.accessSync(full, fs.constants.X_OK);
+      return full;
+    } catch (_) {}
+  }
+  return null;
+}
+
+// Ejecuta graphify update en el directorio especificado para generar un grafo
+// en graphify-out/graph.json. Si ya existe, lo lee sin regenerar; si se pide
+// reanalizar, lo regenera usando el AST (sin LLM ni API key). El grafo generado
+// se usa para la sesión de Claude, que consulta el mismo grafo para análisis.
+// Si graphify no está instalado, lanza un error 501.
+function graphifyGraph(dir, rebuild) {
+  const out = path.join(dir, "graphify-out", "graph.json");
+  const read = () => toMapGraph(loadJSON(out), dir);
+  if (!rebuild && fs.existsSync(out)) return Promise.resolve(read());
+  const bin = findGraphify();
+  if (!bin) return Promise.reject(Object.assign(new Error("graphify no está instalado (uv tool install graphifyy)"), { status: 501 }));
+  return new Promise((resolve, reject) => {
+    child_process.execFile(
+      bin,
+      ["update", dir],
+      { cwd: dir, timeout: GRAPHIFY_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, PATH: `${path.dirname(bin)}${path.delimiter}${process.env.PATH || ""}` } },
+      (err, stdout, stderr) => {
+        if (!err && fs.existsSync(out)) {
+          try {
+            return resolve(read());
+          } catch (e) {
+            return reject(e);
+          }
+        }
+        reject(new Error(gitinfo.errorSummary(`${stderr}\n${stdout}`) || (err && err.message) || "graphify no generó graph.json"));
+      }
+    );
+  });
+}
+
+app.get("/api/graph", async (req, res) => {
+  const engine = req.query.engine === "graphify" ? "graphify" : "interno";
+  // graphify escribe en el disco: solo dentro de Proyectos. El interno solo lee.
+  const dir = engine === "graphify" ? insideProject(req.query.path) : resolveDir(req.query.path);
+  if (!dir) return res.status(engine === "graphify" ? 403 : 400).json(engine === "graphify" ? FORBIDDEN : { error: "Falta el parámetro path" });
   if (!isDirectory(dir)) return res.status(404).json({ error: "La carpeta no existe" });
 
-  const cached = graphCache.get(dir);
+  const key = `${engine}:${dir}`;
+  const refresh = req.query.refresh === "1";
+  const cached = graphCache.get(key);
   const fresh = cached && Date.now() - cached.at < GRAPH_CACHE_MS;
-  if (fresh && req.query.refresh !== "1") return res.json({ ...cached.graph, cached: true });
+  if (fresh && !refresh) return res.json({ ...cached.graph, cached: true });
 
   try {
-    const graph = buildGraph(dir);
-    graphCache.delete(dir);
-    graphCache.set(dir, { at: Date.now(), graph });
+    const graph = engine === "graphify" ? await graphifyGraph(dir, refresh) : buildGraph(dir);
+    graphCache.delete(key);
+    graphCache.set(key, { at: Date.now(), graph });
     // Map conserva el orden de inserción: el primero es el más viejo
     while (graphCache.size > GRAPH_CACHE_MAX) graphCache.delete(graphCache.keys().next().value);
     touchProject(dir);
     res.json({ ...graph, cached: false });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

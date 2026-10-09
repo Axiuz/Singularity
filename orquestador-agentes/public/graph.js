@@ -31,6 +31,10 @@ const CodeMap = (() => {
   let adjacency = new Map();
 
   let mode = "fn";
+  let engine = "interno";
+  try {
+    if (localStorage.getItem("orq.mapEngine") === "graphify") engine = "graphify";
+  } catch (_) {}
   let currentPath = null;
   let selectedId = null;
   let hoveredId = null;
@@ -46,8 +50,11 @@ const CodeMap = (() => {
   let loading = false;
 
   // ============ Colores ============
+  const colorKey = (node) =>
+    graph?.engine === "graphify" && node.community !== undefined ? `Comunidad ${node.community}` : node.dir || "raíz";
+
   function colorFor(node) {
-    const key = node.dir || "/";
+    const key = colorKey(node);
     if (!dirColors.has(key)) {
       let hash = 0;
       for (const ch of key) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
@@ -61,9 +68,9 @@ const CodeMap = (() => {
     if (!dirPath || loading) return;
     loading = true;
     currentPath = dirPath;
-    overlay(`Leyendo ${tildePath(dirPath)}…`, true);
+    overlay(engine === "graphify" ? `Analizando ${tildePath(dirPath)} con graphify…` : `Leyendo ${tildePath(dirPath)}…`, true);
     try {
-      const url = `/api/graph?path=${encodeURIComponent(dirPath)}${refresh ? "&refresh=1" : ""}`;
+      const url = `/api/graph?path=${encodeURIComponent(dirPath)}&engine=${engine}${refresh ? "&refresh=1" : ""}`;
       graph = await api(url);
       selectedId = null;
       hoveredId = null;
@@ -509,8 +516,8 @@ const CodeMap = (() => {
     const incoming = graph.edges.filter((e) => e.target === node.id);
     const where = node.type === "fn" ? `${node.file}:${node.line}` : node.file;
     const meta = node.type === "fn"
-      ? `${node.kind} · ${node.endLine - node.line + 1} líneas`
-      : `${node.lang} · ${node.loc} líneas · ${node.defs} definiciones`;
+      ? `${node.kind}${node.endLine ? ` · ${node.endLine - node.line + 1} líneas` : ""}`
+      : `${node.lang}${node.loc ? ` · ${node.loc} líneas` : ""} · ${node.defs} definiciones`;
 
     box.innerHTML = `
       <div class="map-group">
@@ -639,15 +646,21 @@ const CodeMap = (() => {
       return;
     }
     const s = graph.stats;
-    el.textContent = `${s.analyzed}/${s.files} archivos · ${s.functions} funciones · ${s.calls} llamadas${s.truncated ? " · recortado" : ""}`;
+    el.textContent = `${s.analyzed}/${s.files} archivos · ${s.functions} funciones · ${s.calls} llamadas${s.communities ? ` · ${s.communities} comunidades` : ""}${s.truncated ? " · recortado" : ""}`;
   }
 
   function renderLegend() {
     const el = $("#mapLegend");
     if (!el || !graph) return;
-    const dirs = [...new Set(graph.nodes.map((n) => n.dir))].sort().slice(0, 12);
-    el.innerHTML = dirs
-      .map((d) => `<span><i style="background:${colorFor({ dir: d })}"></i>${escapeHtml(d || "raíz")}</span>`)
+    const counts = new Map();
+    for (const n of graph.nodes) {
+      const key = colorKey(n);
+      if (!counts.has(key)) counts.set(key, { n: 0, sample: n });
+      counts.get(key).n++;
+    }
+    const groups = [...counts.entries()].sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0])).slice(0, 12);
+    el.innerHTML = groups
+      .map(([key, g]) => `<span><i style="background:${colorFor(g.sample)}"></i>${escapeHtml(key)}</span>`)
       .join("");
   }
 
@@ -710,6 +723,19 @@ const CodeMap = (() => {
       selectedId = null;
       buildView();
       renderInspector();
+    });
+
+    $$("#mapEngine button").forEach((b) => b.classList.toggle("active", b.dataset.engine === engine));
+    $("#mapEngine").addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn || btn.dataset.engine === engine) return;
+      engine = btn.dataset.engine;
+      try {
+        localStorage.setItem("orq.mapEngine", engine);
+      } catch (_) {}
+      $$("#mapEngine button").forEach((b) => b.classList.toggle("active", b.dataset.engine === engine));
+      byId = new Map();
+      if (currentPath) load(currentPath);
     });
 
     new ResizeObserver(() => draw()).observe(stage);
