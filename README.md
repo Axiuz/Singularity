@@ -129,6 +129,13 @@ este repo como plantilla).
 | **Consola** | Probar un agente a mano (⌘↵ para enviar) |
 | **Conexión** | Instrucciones para `CLAUDE.md`, URL de LM Studio, modelo y paralelismo |
 
+**La pantalla dividida** muestra una o dos pestañas lado a lado. Haz clic
+derecho o ⌘+clic en una pestaña para abrirla a la derecha. La pestaña derecha
+tiene una × que cierra la división. Arrastra el divisor entre 20% y 80%; doble
+clic vuelve a mitad. La misma pestaña no puede estar en ambos lados: se
+intercambian. La derecha y el reparto se recuerdan; la izquierda siempre empieza
+en Tablero.
+
 El carril izquierdo lista los proyectos recientes (con su rama de git) y el
 derecho muestra la terminal, el estado de cada agente, los tokens que gasta
 Claude Code y el control de código de la carpeta abierta.
@@ -669,7 +676,7 @@ orquestador-agentes/          raíz del repo
     claudeusage.js            tokens que gasta Claude Code, leídos de sus transcripts
     safepath.js               contención de rutas del editor
     public/                   panel: index.html, styles.css, app.js, graph.js,
-                              editor.js, preview.js
+                              editor.js, preview.js, split.js
     data/                     agents.json, config.json (y plan.json, projects.json,
                               commitplans.json, notes.json, ignorados por git)
     test/                     tests del escáner, el tablero, las rutas, Git y el
