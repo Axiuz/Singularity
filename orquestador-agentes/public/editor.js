@@ -2025,7 +2025,7 @@ const CodeEditor = (() => {
   let lastGitPoll = 0;
 
   function pollGit() {
-    if (!root || document.hidden || !document.querySelector("#tab-editor.active")) return;
+    if (!root || document.hidden || !document.querySelector("#tab-editor:is(.active, .side)")) return;
     if (Date.now() - lastGitPoll < GIT_POLL_MS) return;
     lastGitPoll = Date.now();
     loadGitMarks({ force: true });
@@ -2156,7 +2156,7 @@ const CodeEditor = (() => {
   const SHORTCUTS = { e: "explorer", f: "search", b: "branches", n: "notes", x: "extensions", m: "map" };
 
   window.addEventListener("keydown", (e) => {
-    if (!document.querySelector("#tab-editor.active")) return;
+    if (!document.querySelector("#tab-editor:is(.active, .side)")) return;
     const meta = e.metaKey || e.ctrlKey;
     if (!meta) return;
     const key = e.key.toLowerCase();

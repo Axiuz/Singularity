@@ -31,7 +31,7 @@ const Preview = (() => {
   };
 
   const $ = (sel) => document.querySelector(sel);
-  const visible = () => Boolean(document.querySelector("#tab-preview.active"));
+  const visible = () => Boolean(document.querySelector("#tab-preview:is(.active, .side)"));
   const serverFor = (dir) => servers.find((s) => s.path === dir) || null;
 
   async function api(url, body, method) {

@@ -42,23 +42,93 @@ async function api(url, body, method) {
 }
 
 // ================= Tabs =================
-function showTab(tab) {
-  $$(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  $$(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
-  $("#app").classList.toggle("wide", WIDE_TABS.includes(tab));
+const SPLIT_KEY = "dispatch.split";
+let split = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SPLIT_KEY));
+    // Al arrancar se abre Tablero a la izquierda, como siempre: solo se recuerda
+    // la derecha, y si era Tablero se descarta para no tenerla en los dos lados
+    const right = saved?.right && saved.right !== "tablero" ? saved.right : null;
+    return { left: "tablero", right, ratio: Split.clampRatio(saved?.ratio) };
+  } catch {
+    return { left: "tablero", right: null, ratio: 0.5 };
+  }
+})();
+
+// Actualiza la vista de la pestaña visible, actualiza el estado en localStorage
+// y activa el panel correspondiente; también ajusta el tamaño de componentes
+// visibles como terminales o el mapa, que solo se pueden medir cuando están visibles.
+function showTab(tab, side = "left") {
+  split = Split.nextSplit(split, tab, side);
+  try {
+    localStorage.setItem(SPLIT_KEY, JSON.stringify({ right: split.right, ratio: split.ratio }));
+  } catch {}
+  const { left, right } = split;
+  $$(".tab-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === left);
+    b.classList.toggle("side", b.dataset.tab === right);
+  });
+  $$(".tab-panel").forEach((p) => {
+    p.classList.toggle("active", p.id === `tab-${left}`);
+    p.classList.toggle("side", p.id === `tab-${right}`);
+  });
+  $("#panes").classList.toggle("is-split", Boolean(right));
+  $("#panes").style.setProperty("--split", `${split.ratio * 100}%`);
+  $("#app").classList.toggle("wide", WIDE_TABS.includes(left) || WIDE_TABS.includes(right));
+  const shown = [left, right];
   // Cada terminal mide su tamaño al hacerse visible: xterm no puede medir un
   // contenedor oculto, y el dock desaparece en las pestañas anchas
   requestAnimationFrame(() => {
-    if (tab === "sesion") sessionTerm.fit();
+    if (shown.includes("sesion")) sessionTerm.fit();
     dockTerm.fit();
   });
   // El canvas del mapa y Monaco solo se pueden medir cuando son visibles
-  if (tab === "mapa") requestAnimationFrame(() => CodeMap.open());
-  if (tab === "editor") requestAnimationFrame(() => CodeEditor.open());
-  if (tab === "preview") requestAnimationFrame(() => Preview.open());
+  if (shown.includes("mapa")) requestAnimationFrame(() => CodeMap.open());
+  if (shown.includes("editor")) requestAnimationFrame(() => CodeEditor.open());
+  if (shown.includes("preview")) requestAnimationFrame(() => Preview.open());
 }
 
-$$(".tab-btn").forEach((btn) => btn.addEventListener("click", () => showTab(btn.dataset.tab)));
+$$(".tab-btn").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    if (e.target.closest(".tab-close")) return showTab(btn.dataset.tab, "close");
+    showTab(btn.dataset.tab, e.metaKey ? "right" : "left");
+  });
+  btn.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    showTab(btn.dataset.tab, "right");
+  });
+  btn.insertAdjacentHTML("beforeend", '<span class="tab-close" title="Cerrar la división">×</span>');
+});
+
+(() => {
+  const handle = $("#paneSplit");
+  const panes = $("#panes");
+  const setRatio = (ratio) => {
+    split = { ...split, ratio: Split.clampRatio(ratio) };
+    panes.style.setProperty("--split", `${split.ratio * 100}%`);
+  };
+  handle.addEventListener("pointerdown", (e) => {
+    const box = panes.getBoundingClientRect();
+    document.body.classList.add("resizing-x");
+    const move = (ev) => setRatio((ev.clientX - box.left) / box.width);
+    const up = () => {
+      document.body.classList.remove("resizing-x");
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      // Misma pestaña: solo guarda el reparto nuevo en localStorage
+      showTab(split.left);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    e.preventDefault();
+  });
+  handle.addEventListener("dblclick", () => {
+    setRatio(0.5);
+    showTab(split.left);
+  });
+})();
+
+showTab("tablero");
 
 // ================= Render: plan (kanban) =================
 // Las mismas cinco columnas que el servidor (kanban.js). El glifo es solo

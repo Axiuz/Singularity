@@ -333,6 +333,25 @@ body.resizing-x * { cursor: col-resize !important; }
 .tab-panel { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 14px; overflow-y: auto; }
 .tab-panel.active { display: flex; }
 
+/* Pantalla dividida. La clase es is-split porque .split ya existe más abajo
+   con gap: 16px, que descuadraba el divisor respecto al cursor */
+.panes { flex: 1; min-height: 0; display: flex; }
+.panes > .tab-panel.active { order: 1; }
+.pane-split { display: none; order: 2; flex: 0 0 13px; cursor: col-resize; position: relative; }
+.pane-split::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 6px; width: 1px;
+  background: var(--border-soft); transition: background 120ms ease;
+}
+.pane-split:hover::after, body.resizing-x .pane-split::after { background: var(--accent-line); }
+.panes.is-split > .tab-panel.active { flex: 0 0 calc(var(--split) - 6px); min-width: 0; }
+.panes.is-split > .tab-panel.side { display: flex; order: 3; flex: 1 1 0; min-width: 0; }
+.panes.is-split > .pane-split { display: block; }
+body.resizing-x iframe { pointer-events: none; }
+.tab-btn.side { color: var(--text); border-bottom-color: var(--accent-line); }
+.tab-close { display: none; margin-left: 6px; color: var(--ghost); }
+.tab-close:hover { color: var(--text); }
+.tab-btn.side .tab-close { display: inline; }
+
 /* ---------- Botones y formularios ---------- */
 .btn {
   font-size: 12px; color: var(--text-2); background: var(--panel-2);
@@ -1211,7 +1230,7 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--ghost); c
 .terminal-slot .terminal-host { flex: 1; }
 
 /* ---------- Editor de código (Monaco) ---------- */
-#tab-editor.tab-panel.active { display: flex; flex-direction: column; gap: 0; overflow: hidden; }
+#tab-editor.tab-panel.active, #tab-editor.tab-panel.side { display: flex; flex-direction: column; gap: 0; overflow: hidden; }
 .git-wide { width: 100%; margin-top: 8px; }
 .git-remote .row { flex-wrap: wrap; }
 
@@ -1436,7 +1455,8 @@ button.ed-status-branch { display: flex; align-items: center; gap: 4px; }
 }
 .ed-note:hover { background: var(--panel); }
 .ed-note.done .ed-note-text { color: var(--ghost); text-decoration: line-through; }
-.ed-note input { accent-color: var(--accent); margin-top: 2px; flex: none; }
+/* Anula el width: 100% de la regla global de input: estirado, el checkbox empuja el texto y el botón de borrar fuera de la fila */
+.ed-note input { accent-color: var(--accent); margin-top: 2px; flex: none; width: auto; padding: 0; }
 .ed-note-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .ed-note-del {
   background: none; border: 0; cursor: pointer; color: var(--ghost); opacity: 0;

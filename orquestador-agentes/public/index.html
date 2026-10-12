@@ -68,6 +68,7 @@
       <button class="tab-btn" data-tab="conexion">Conexión</button>
     </nav>
 
+    <div class="panes" id="panes">
     <!-- ============ TABLERO ============ -->
     <section id="tab-tablero" class="tab-panel active">
       <div class="plan-empty slim" id="planEmpty">
@@ -365,6 +366,8 @@
         <div class="debug-steps" id="debugSteps"></div>
       </div>
     </section>
+    <div class="pane-split" id="paneSplit" title="Arrastra para cambiar el reparto · doble clic: mitad y mitad"></div>
+    </div>
   </main>
 
   <!-- ============ CARRIL DERECHO: terminal y control de código ============ -->
@@ -408,6 +411,7 @@
 <script src="/vendor/xterm/xterm.js"></script>
 <script src="/vendor/xterm/addon-fit.js"></script>
 <script src="branchcolor.js"></script>
+<script src="split.js"></script>
   <script src="app.js"></script>
 <script src="graph.js"></script>
 <script src="preview.js"></script>
