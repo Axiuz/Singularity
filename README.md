@@ -2,12 +2,21 @@
 
 **Claude Code decide, tus modelos locales hacen el trabajo pesado, y tú lo ves todo en vivo.**
 
-[![Último release](https://img.shields.io/github/v/release/Axiuz/Dispatch)](https://github.com/Axiuz/Dispatch/releases/latest) [![Licencia](https://img.shields.io/github/license/Axiuz/Dispatch)](LICENSE) [![Plataforma](https://img.shields.io/badge/platform-macOS%2013%2B-blue)](#empezar-en-3-pasos)
+[![Último release](https://img.shields.io/github/v/release/Axiuz/Singularity)](https://github.com/Axiuz/Singularity/releases/latest) [![Licencia](https://img.shields.io/github/license/Axiuz/Singularity)](LICENSE) [![Plataforma](https://img.shields.io/badge/platform-macOS%2013%2B-blue)](#empezar-en-3-pasos)
 
 Singularity es una app de macOS, libre y open source, que conecta [Claude Code](https://claude.com/claude-code)
 con modelos de IA que corren en tu Mac a través de [LM Studio](https://lmstudio.ai). Claude Code
 planifica y revisa; los tests, la documentación y el código repetitivo se los pasa a agentes
 locales. Y en un solo panel tienes el plan, la terminal, el editor, el navegador y git.
+
+![Tablero de Singularity](docs/screenshots/tablero.png)
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/editor.png" alt="Editor con explorador y depurador"></td>
+    <td><img src="docs/screenshots/agentes.png" alt="Definición de agentes locales"></td>
+  </tr>
+</table>
 
 ```
 Claude Code ──curl──▶ Orquestador :3131 ──API OpenAI──▶ LM Studio :1234
@@ -44,7 +53,7 @@ Claude Code ──curl──▶ Orquestador :3131 ──API OpenAI──▶ LM S
    Gemma 3 4B) y activa su CLI `lms` en *Settings > Developer*.
 2. Instala [Claude Code](https://claude.com/claude-code), de forma que `claude` quede en el PATH.
 3. Descarga el último `Singularity-x.y.z.dmg` de
-   [Releases](https://github.com/Axiuz/Dispatch/releases/latest) y arrástralo a Aplicaciones.
+   [Releases](https://github.com/Axiuz/Singularity/releases/latest) y arrástralo a Aplicaciones.
    La firma es ad-hoc y no está notarizada: la primera vez, ábrelo con clic derecho > Abrir.
 
 Al abrirse, la app levanta LM Studio, carga el modelo y arranca el orquestador. Al cerrarla
