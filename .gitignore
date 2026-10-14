@@ -22,3 +22,6 @@ orquestador-agentes/data/extensions.json
 
 # Grafo que genera graphify desde el Mapa o la skill /graphify
 graphify-out/
+
+# Lista de rastreadores bajada de EasyPrivacy: se regenera sola
+orquestador-agentes/data/trackers.json
