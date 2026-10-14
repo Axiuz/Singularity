@@ -1,8 +1,13 @@
 # Singularity
 
-Panel local para ver y controlar cómo Claude Code delega trabajo a modelos de IA
-que corren en tu Mac (LM Studio). Incluye una app nativa de macOS que arranca todo
-con un doble clic y abre Claude Code en una terminal integrada.
+**Claude Code decide, tus modelos locales hacen el trabajo pesado, y tú lo ves todo en vivo.**
+
+[![Último release](https://img.shields.io/github/v/release/Axiuz/Dispatch)](https://github.com/Axiuz/Dispatch/releases/latest) [![Licencia](https://img.shields.io/github/license/Axiuz/Dispatch)](LICENSE) [![Plataforma](https://img.shields.io/badge/platform-macOS%2013%2B-blue)](#empezar-en-3-pasos)
+
+Singularity es una app de macOS, libre y open source, que conecta [Claude Code](https://claude.com/claude-code)
+con modelos de IA que corren en tu Mac a través de [LM Studio](https://lmstudio.ai). Claude Code
+planifica y revisa; los tests, la documentación y el código repetitivo se los pasa a agentes
+locales. Y en un solo panel tienes el plan, la terminal, el editor, el navegador y git.
 
 ```
 Claude Code ──curl──▶ Orquestador :3131 ──API OpenAI──▶ LM Studio :1234
@@ -11,76 +16,44 @@ Claude Code ──curl──▶ Orquestador :3131 ──API OpenAI──▶ LM S
      └──── pty ────────────┘         terminal integrada con `claude`
 ```
 
-Claude Code sigue siendo el único que lee archivos y toca tu código. Los agentes
-locales reciben texto y devuelven texto: Claude Code les pega el contexto que
-necesitan y revisa lo que devuelven antes de usarlo.
-
 ---
 
-## Qué hace
+## Por qué Singularity
 
-- **Rutea delegaciones.** Claude Code llama a `POST /agent/{id}` y el orquestador
-  manda la petición a LM Studio con el system prompt de ese agente.
-- **Muestra todo en vivo.** Cada delegación es un *run*: su tarjeta de agente
-  marca el estado y, al abrirla, el prompt, el razonamiento del modelo (si lo
-  emite) y la respuesta aparecen token a token.
-- **Sigue el plan.** Claude Code registra el plan que aprobaste y el panel lo
-  pinta como un kanban de cinco columnas que avanza solo. También puedes
-  arrastrar las tarjetas y escribir las tuyas.
-- **Abre una terminal por proyecto.** Eliges una carpeta y se abre tu shell de
-  siempre ahí. Escribe `claude` y trabaja como de costumbre; las instrucciones
-  para que sepa qué agentes tiene salen de la pestaña Conexión. La terminal se ve
-  desde cualquier pestaña, en el carril derecho.
-- **Cuenta lo que gasta Claude Code.** El carril derecho lee sus transcripts y
-  desglosa los tokens del día, con la caché aparte.
-- **Edita el código sin salir.** La pestaña Editor trae Monaco, el editor de VS
-  Code, con el árbol del proyecto y guardado con ⌘S.
-- **Edita los agentes.** Nombre, cuándo usarlo, system prompt, temperatura y
-  límite de tokens, desde el panel.
+- **Gastas menos tokens.** El trabajo mecánico lo hace un modelo de 4B en tu Mac, gratis.
+- **Sabes qué está pasando.** Cada delegación se ve token a token, y el plan avanza solo en un kanban.
+- **Lo tienes todo en una ventana.** Terminal, editor, depurador, navegador y git, sin cambiar de app.
+- **Tú conservas el control.** Claude Code es el único que toca tu código, y los commits los haces tú.
 
-**Un solo modelo cargado sirve a todos los agentes.** Cada agente es un system
-prompt distinto, no un modelo distinto: cinco agentes no ocupan más RAM que uno.
+## Qué trae
 
----
+| Área | Qué hace |
+|---|---|
+| Agentes locales | Cada agente es un system prompt sobre un solo modelo cargado: cinco agentes no ocupan más RAM que uno. Se editan desde el panel. |
+| Delegaciones en vivo | Prompt, razonamiento y respuesta de cada run, token a token. |
+| Tablero | El plan de Claude Code como kanban de cinco columnas que avanza solo, con tus tarjetas, notas y to-dos por proyecto. |
+| Terminal | Una terminal por proyecto con `claude` y un contador de los tokens que gastas en el día. |
+| Editor | Monaco, el editor de VS Code, con árbol del proyecto. Ejecuta muchos lenguajes y depura con breakpoints C, C++, Swift, Rust y Python. |
+| Navegador | WebKit con pestañas estilo Zen, carpetas, descargas, bloqueo de rastreadores y pantalla dividida con el editor. |
+| Control de código | Git con plan de commits agrupados por tema, ramas y carpetas de trabajo. |
+| Preview | Tu web en vivo, el dev server del proyecto y emuladores Android. |
 
-## Requisitos
+## Empezar en 3 pasos
 
-- macOS 13 o superior (la app es universal: Apple Silicon e Intel)
-- Node.js 18 o superior y [pnpm](https://pnpm.io)
-- [LM Studio](https://lmstudio.ai) con uno o dos modelos descargados (probado
-  con Qwen3 4B y Gemma 3 4B, uno por par de agentes) y su CLI `lms` activada en
-  *Settings > Developer*
-- [Claude Code](https://claude.com/claude-code) instalado (`claude` en el PATH)
-  para la terminal integrada
+1. Instala [LM Studio](https://lmstudio.ai), descarga un modelo de ~4B (probado con Qwen3 4B y
+   Gemma 3 4B) y activa su CLI `lms` en *Settings > Developer*.
+2. Instala [Claude Code](https://claude.com/claude-code), de forma que `claude` quede en el PATH.
+3. Descarga el último `Singularity-x.y.z.dmg` de
+   [Releases](https://github.com/Axiuz/Dispatch/releases/latest) y arrástralo a Aplicaciones.
+   La firma es ad-hoc y no está notarizada: la primera vez, ábrelo con clic derecho > Abrir.
 
----
+Al abrirse, la app levanta LM Studio, carga el modelo y arranca el orquestador. Al cerrarla
+los detiene y deja la RAM libre. Los datos se guardan en `~/Library/Application Support/Singularity`
+(sobreviven a reinstalar) y los logs en `~/Library/Logs/Singularity/`.
 
-## Instalación
+### Desde el código
 
-### Opción A: la app de macOS
-
-```bash
-cd orquestador-agentes && pnpm install && cd ..
-bash Scripts/build-dmg.sh
-```
-
-Genera `dist/Singularity-<versión>.dmg`. Arrastra la app a Aplicaciones y
-ábrela. Al arrancar:
-
-1. `launcher.sh` levanta el servidor de LM Studio con `--bind 127.0.0.1` y carga
-   el modelo en segundo plano.
-2. Arranca el orquestador con los datos en
-   `~/Library/Application Support/Singularity` (sobreviven a reinstalar).
-3. La ventana nativa carga el panel. Al cerrar la app se detiene el orquestador
-   y también LM Studio (`lms unload --all` y `lms server stop`): cerrar Singularity
-   deja la RAM libre.
-
-Logs en `~/Library/Logs/Singularity/`.
-
-La firma es ad-hoc: la primera vez macOS puede pedir abrirla con clic derecho >
-Abrir.
-
-### Opción B: desarrollo
+Requiere Node.js 18+ y [pnpm](https://pnpm.io).
 
 ```bash
 cd orquestador-agentes
@@ -90,14 +63,30 @@ pnpm start     # orquestador en http://localhost:3131
 ```
 
 Si LM Studio real ya ocupa el 1234, usa `MOCK_PORT=1235 pnpm mock` y cambia la
-URL en la pestaña Conexión.
-
-El mock entiende dos palabras clave dentro del prompt:
+URL en la pestaña Conexión. El mock entiende dos palabras clave dentro del prompt:
 
 | Palabra | Efecto |
 |---|---|
 | `FORZAR_ERROR` | responde 500, para probar el manejo de errores |
 | `FORZAR_RAZONAMIENTO` | manda `reasoning_content` antes de la respuesta |
+
+Para generar tu propio DMG: `bash Scripts/build-dmg.sh` (deja `dist/Singularity-<versión>.dmg`).
+
+## Versiones
+
+Cada push a `main` que pasa los tests publica solo un release `v2.1.N` con el DMG.
+Para pasar a 2.2.x se sube el minor a mano en `orquestador-agentes/package.json`.
+Los cambios que solo tocan documentación no sacan release.
+
+## Contribuir
+
+- Abre un issue para proponer una función o reportar un error.
+- Manda tu PR contra `main`.
+- Ejecuta `pnpm test` en `orquestador-agentes` antes de mandarlo.
+
+## Licencia
+
+[Apache 2.0](LICENSE).
 
 ---
 
