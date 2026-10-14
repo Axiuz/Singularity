@@ -125,6 +125,7 @@ este repo como plantilla).
 | **Sesión** | Una terminal por carpeta, con tu shell de siempre; varias abiertas a la vez, una visible |
 | **Editor** | Monaco con el árbol del proyecto: abre, edita y guarda con ⌘S, solo dentro de tus carpetas de Proyectos |
 | **Mapa** | Grafo de un proyecto: un punto por función, unidos por quién llama a quién. Dice dónde está definida y dónde se usa, y copia ese contexto para pegárselo a Claude Code. Dos motores: el interno y **graphify** (AST real y comunidades, sin LLM), que deja su `graphify-out/` en el proyecto para que `/graphify query` use el mismo grafo |
+| **Navegador** | Un navegador WebKit con pestañas estilo Zen, carpetas y descargas, para abrir cualquier sitio sin salir de la app |
 | **Agentes** | Crear, editar, activar o eliminar agentes |
 | **Consola** | Probar un agente a mano (⌘↵ para enviar) |
 | **Conexión** | Instrucciones para `CLAUDE.md`, URL de LM Studio, modelo y paralelismo |
@@ -135,6 +136,21 @@ tiene una × que cierra la división. Arrastra el divisor entre 20% y 80%; doble
 clic vuelve a mitad. La misma pestaña no puede estar en ambos lados: se
 intercambian. La derecha y el reparto se recuerdan; la izquierda siempre empieza
 en Tablero.
+
+**El navegador** es WebKit completo (el motor de Safari), con una vista nativa por
+pestaña: Google, GitHub, YouTube y los inicios de sesión funcionan. La barra
+lateral va estilo Zen: fijadas arriba en rejilla, la lista debajo. Clic derecho
+fija o suelta una pestaña, clic central la cierra. Atajos: ⌘T nueva, ⌘W cerrar,
+⌘L URL, ⌘[ y ⌘] atrás y adelante. Las pestañas y las sesiones se guardan al
+cerrar la app. Funciona en pantalla dividida con el Editor. Se oculta si hay un
+modal abierto, y solo existe dentro de la app de macOS. **+ Carpeta** crea una
+carpeta: se arrastran pestañas dentro y fuera, clic la pliega, doble clic la
+renombra y la × la quita dejando sus pestañas sueltas. Las descargas (enlaces o
+archivos que WebKit no muestra, como zip o dmg) bajan a `~/Downloads`, numeradas
+como Safari si el nombre ya existe. La sección Descargas, al pie de la barra, da
+la barra de progreso; clic abre el archivo, la lupa lo enseña en Finder,
+*Carpeta* abre `~/Downloads` y *Limpiar* vacía la lista sin borrar archivos. Se
+recuerdan las últimas 30. Sin historial ni marcadores.
 
 El carril izquierdo lista los proyectos recientes (con su rama de git) y el
 derecho muestra la terminal, el estado de cada agente, los tokens que gasta
@@ -378,6 +394,10 @@ POST   /api/android/stop          {serial}
 POST   /api/android/mirror        {serial} — abre scrcpy
 POST   /api/android/install       {serial, apk} — el apk, dentro de un proyecto
 POST   /api/android/url           {serial, url} — la abre en el dispositivo
+GET    /api/run?path=             qué se puede hacer con ese archivo, estado y log
+POST   /api/run                   {path, debug?, breakpoints?} — 202
+POST   /api/run/dap               {command, args} — continue, next, stepIn, evaluate…
+DELETE /api/run                   para el programa en marcha
 GET    /api/android/gradle?path=  {root, modules, java, wrapper, build}
 GET    /api/android/build         la compilación en curso y su log
 POST   /api/android/build         {path, module?, variant?, serial?, install?} — 202
@@ -442,6 +462,40 @@ Solo ve y escribe dentro de las carpetas que ya tienes en **Proyectos**. Fuera
 quedan `node_modules`, `.git`, los archivos de más de 2 MB y los binarios. Si
 Claude Code cambia un archivo que tienes abierto y tú no lo has tocado, se recarga
 solo sin moverte el cursor; si lo tenías a medio editar, te avisa y no lo pisa.
+
+### Ejecutar y depurar
+
+Desde el editor, puedes ejecutar y depurar el archivo que tienes abierto:
+
+- Haz clic en **▶ ejecutar** o **depurar** en la barra de estado (abajo). Mientras el programa corre, verás un botón con su estado (ej. `■ hola.c · en pausa`) que lo para.
+- Abre la vista **Ejecutar y depurar** con **⇧⌘D**. Allí encontrarás botones para continuar, pausar, paso por encima, entrar, salir, reiniciar y parar.
+- Las secciones **Variables**, **Pila de llamadas** y **Breakpoints** te enseñan el estado del programa cuando se para.
+- Los breakpoints se ponen haciendo clic en el margen izquierdo del editor o con **F9**. Se recuerdan entre sesiones y, si ya hay una depuración en marcha, se aplican al momento.
+- La **consola de depuración** sale abajo, junto a Problemas: ahí va la salida del programa y una caja para evaluar expresiones en pausa.
+
+#### Lenguajes soportados
+
+| Lenguaje | Ejecutar | Depurar |
+|---|---|---|
+| C, C++, Swift, Rust | ✅ | ✅ (con lldb-dap, viene con las Command Line Tools de Xcode) |
+| Python | ✅ | ✅ (requiere `python3 -m pip install --user debugpy`) |
+| JavaScript, TypeScript | ✅ (node) | todavía no |
+| Java, Kotlin | ✅ | todavía no |
+| Go, Ruby, PHP, Shell | ✅ | — |
+
+#### Atajos
+
+- **F5**: depurar / continuar
+- **⌃F5**: ejecutar sin depurar
+- **⇧F5**: parar
+- **⇧⌘F5**: reiniciar
+- **F6**: pausar
+- **F9**: poner o quitar breakpoint
+- **F10**: paso por encima
+- **F11**: entrar en la función
+- **⇧F11**: salir de la función
+
+> ⚠️ Se trabaja con el archivo suelto: para un proyecto con `package.json` o Gradle siguen el dev server de Preview y el botón compilar. Solo se puede ejecutar un programa a la vez y no hay entrada por teclado (stdin cerrado). Los binarios se guardan en una carpeta temporal (`singularity-run`), nunca en el repositorio.
 
 ### Las terminales
 
@@ -673,17 +727,21 @@ orquestador-agentes/          raíz del repo
     devserver.js              arranca el script del package.json y saca su URL del log
     android.js                emuladores: AVDs, dispositivos y operaciones de adb
     gradle.js                 compila con ./gradlew y localiza el APK que sale
+    runners.js                cómo compilar, ejecutar y depurar un archivo según su extensión
+    dap.js                    cliente del Debug Adapter Protocol: la ejecución en marcha
     claudeusage.js            tokens que gasta Claude Code, leídos de sus transcripts
     safepath.js               contención de rutas del editor
     public/                   panel: index.html, styles.css, app.js, graph.js,
-                              editor.js, preview.js, split.js
+                              editor.js, preview.js, split.js,
+                              browser.js, browserurl.js
     data/                     agents.json, config.json (y plan.json, projects.json,
                               commitplans.json, notes.json, ignorados por git)
     test/                     tests del escáner, el tablero, las rutas, Git y el
                               plan de commits (pnpm test)
     dev/mock-lmstudio.js      simulador de LM Studio
   macos/
-    Singularity.swift         ventana nativa (WKWebView), portapapeles y selector de carpeta
+    Singularity.swift         ventana nativa (WKWebView), portapapeles, selector de carpeta
+                              y las vistas del navegador integrado
     launcher.sh               arranca/detiene LM Studio y el orquestador
     make-icon.swift, logo.jpg icono de la app
   Scripts/build-dmg.sh        compila la app y genera el .dmg
