@@ -63,6 +63,7 @@
       <button class="tab-btn" data-tab="sesion">Sesión <span class="tab-count" id="sessionCount"></span></button>
       <button class="tab-btn" data-tab="mapa">Mapa</button>
       <button class="tab-btn" data-tab="preview">Preview <span class="tab-count" id="previewCount"></span></button>
+      <button class="tab-btn" data-tab="navegador">Navegador</button>
       <button class="tab-btn" data-tab="agentes">Agentes</button>
       <button class="tab-btn" data-tab="consola">Consola</button>
       <button class="tab-btn" data-tab="conexion">Conexión</button>
@@ -116,6 +117,7 @@
             <span class="plan-empty-text">Elige un proyecto en el explorador y abre un archivo del árbol. Se guarda con ⌘S, y si Claude Code lo cambia por su cuenta se recarga solo.</span>
           </div>
           <div class="ed-problems" id="edProblems" hidden></div>
+          <div class="ed-problems ed-console" id="edConsole" hidden></div>
           <div class="ed-status" id="edStatus"></div>
         </div>
       </div>
@@ -366,6 +368,42 @@
         <div class="debug-steps" id="debugSteps"></div>
       </div>
     </section>
+    <!-- ============ NAVEGADOR ============ -->
+    <section id="tab-navegador" class="tab-panel">
+      <div class="br">
+        <aside class="br-side">
+          <div class="br-nav">
+            <button class="btn btn-icon" id="brBack" title="Atrás (⌘[)">←</button>
+            <button class="btn btn-icon" id="brForward" title="Adelante (⌘])">→</button>
+            <button class="btn btn-icon" id="brReload" title="Recargar">↻</button>
+          </div>
+          <input id="brUrl" class="br-url mono" placeholder="Buscar o escribir URL" spellcheck="false" autocomplete="off">
+          <div class="br-pins" id="brPins"></div>
+          <div class="br-actions">
+            <button class="br-new" id="brNew">+ Nueva pestaña</button>
+            <button class="br-new" id="brNewFolder" title="Arrastra pestañas dentro">+ Carpeta</button>
+          </div>
+          <div class="br-actions br-tools">
+            <button class="br-new br-shield" id="brShield">⛨ Rastreadores</button>
+            <button class="br-new" id="brSettings" title="Buscador, historial, cookies y datos de sitios">⚙ Ajustes</button>
+          </div>
+          <label class="br-unload muted small" title="Las pestañas que no miras se descargan de memoria; 0 = nunca">
+            Descargar sin uso tras <input type="number" id="brUnloadMin" min="0" max="1440" step="5"> min
+          </label>
+          <div class="br-tabs" id="brTabs" title="Clic derecho: fijar, descargar de memoria o cerrar · arrastra a una carpeta"></div>
+          <div class="br-dl" id="brDl">
+            <div class="br-dl-head">
+              <button class="br-dl-toggle" id="brDlToggle"><span class="br-chev"></span>Descargas <span class="br-count" id="brDlCount"></span></button>
+              <button class="br-dl-btn" id="brDlFolder" title="Abrir la carpeta Descargas en Finder">Carpeta</button>
+              <button class="br-dl-btn" id="brDlClear" title="Vaciar la lista (no borra archivos)">Limpiar</button>
+            </div>
+            <div class="br-dl-list" id="brDlList"></div>
+          </div>
+        </aside>
+        <div class="ed-resizer" id="brResizer" title="Arrastra para cambiar el ancho · doble clic: ancho por defecto"></div>
+        <div class="br-view" id="browserView"><div class="br-empty muted" id="brEmpty"></div></div>
+      </div>
+    </section>
     <div class="pane-split" id="paneSplit" title="Arrastra para cambiar el reparto · doble clic: mitad y mitad"></div>
     </div>
   </main>
@@ -412,9 +450,11 @@
 <script src="/vendor/xterm/addon-fit.js"></script>
 <script src="branchcolor.js"></script>
 <script src="split.js"></script>
+<script src="browserurl.js"></script>
   <script src="app.js"></script>
 <script src="graph.js"></script>
 <script src="preview.js"></script>
+<script src="browser.js"></script>
 <script src="edicons.js"></script>
 <script src="editor.js"></script>
 <script src="extensions.js"></script>

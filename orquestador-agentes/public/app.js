@@ -26,7 +26,7 @@ const PARALLEL_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 // Un run espera turno ("queued") antes de correr: las dos cuentan como activas
 const isActive = (run) => run.status === "queued" || run.status === "running";
-const WIDE_TABS = ["mapa", "preview", "agentes", "consola", "conexion"];
+const WIDE_TABS = ["mapa", "preview", "navegador", "agentes", "consola", "conexion"];
 
 // ================= API =================
 async function api(url, body, method) {
@@ -86,6 +86,7 @@ function showTab(tab, side = "left") {
   if (shown.includes("mapa")) requestAnimationFrame(() => CodeMap.open());
   if (shown.includes("editor")) requestAnimationFrame(() => CodeEditor.open());
   if (shown.includes("preview")) requestAnimationFrame(() => Preview.open());
+  if (typeof Browser !== "undefined") Browser.setVisible(shown.includes("navegador"));
 }
 
 $$(".tab-btn").forEach((btn) => {
@@ -469,6 +470,9 @@ function connectStream() {
     window.dispatchEvent(new CustomEvent("dev:log", { detail: JSON.parse(e.data) }));
   });
 
+  for (const name of ["dap:state", "dap:output", "dap:stopped"]) {
+    es.addEventListener(name, (e) => window.dispatchEvent(new CustomEvent(name, { detail: JSON.parse(e.data) })));
+  }
   es.addEventListener("android:build", (e) => {
     window.dispatchEvent(new CustomEvent("android:build", { detail: JSON.parse(e.data) }));
   });
@@ -792,6 +796,7 @@ const WIDTH_KEYS = {
   "--rail-left": "dispatch.railLeft",
   "--rail-right": "dispatch.railRight",
   "--ed-tree": "dispatch.edTree",
+  "--br-side": "dispatch.brSide",
 };
 
 function setWidth(varName, px, min, max) {
@@ -841,6 +846,8 @@ makeWidthDrag("#railRightResizer", "--rail-right", {
   onMove: () => dockTerm.fit(),
 });
 makeWidthDrag("#edResizer", "--ed-tree", { min: 150, max: 520, dir: 1 });
+// Barra lateral del Navegador: el ResizeObserver de #browserView ya recoloca la vista nativa al cambiar el ancho.
+makeWidthDrag("#brResizer", "--br-side", { min: 160, max: 520, dir: 1 });
 
 // ================= Terminales: Claude Code y shell =================
 // Dos instancias de xterm, no una que se muda de sitio: la pestaña Sesión
