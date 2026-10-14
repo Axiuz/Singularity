@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
   func applicationDidFinishLaunching(_ notification: Notification) {
     buildMenu()
     buildWindow()
+    browser.restoreSessionCookies()
     showStatus("Arrancando LM Studio y el orquestador…")
 
     DispatchQueue.global(qos: .userInitiated).async {
@@ -32,7 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+  // Se ejecuta al cerrar la app; intenta guardar las cookies antes de salir, y gira el runloop hasta 2 segundos para asegurar que getAllCookies termine asincrónicamente.
   func applicationWillTerminate(_ notification: Notification) {
+    var saved = false
+    browser.saveSessionCookies { saved = true }
+    let deadline = Date().addingTimeInterval(2)
+    while !saved && Date() < deadline { RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05)) }
     _ = runLauncher("stop")
   }
 
@@ -405,6 +411,10 @@ final class BrowserHost: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloa
   // que vuelve a pedir las pestañas guardadas mientras las vistas nativas siguen vivas.
   func handle(_ body: [String: Any]) {
     guard let op = body["op"] as? String else { return }
+    if op == "open" && !cookiesReady {
+      pendingOpens.append(body)
+      return
+    }
     let id = body["id"] as? String
     switch op {
     case "frame":
@@ -490,7 +500,10 @@ final class BrowserHost: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloa
       dataStore.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { [weak self] records in
         guard let self else { return }
         self.dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
-                                  for: records.filter { $0.displayName == name }) { self.send(["siteCleared": name]) }
+                                  for: records.filter { $0.displayName == name }) {
+          self.saveSessionCookies()
+          self.send(["siteCleared": name])
+        }
       }
       return
     default: return
@@ -529,7 +542,10 @@ final class BrowserHost: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloa
   // since en ms. Con rango solo se tocan cookies y caché: el almacenamiento del panel cambia a cada
   // momento y caería dentro de cualquier rango. Sin rango se borra por sitio, saltando el panel.
   func clearData(kinds: [String], since: CGFloat) {
-    let done = { [weak self] in self?.send(["dataCleared": true]) ?? () }
+    let done = { [weak self] in
+      self?.saveSessionCookies()
+      self?.send(["dataCleared": true])
+    }
     if since > 0 {
       let types = self.types(for: kinds).intersection(cookieTypes.union(cacheTypes))
       guard !types.isEmpty else { return done() }
@@ -697,6 +713,66 @@ final class BrowserHost: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloa
         self.send(["passwordCopied": true])
         DispatchQueue.main.asyncAfter(deadline: .now() + 60) { if board.changeCount == count { board.clearContents() } }
       }
+    }
+  }
+
+  // WebKit tira las cookies de sesión (sin fecha de caducidad) al cerrar la app aunque el almacén sea
+  // persistente, y muchos portales (Canvas, Tecmilenio) guardan ahí el login: se guardan a mano y se
+  // restauran al abrir. Van a un archivo 0600, como la llave de WebCrypto, porque son credenciales.
+  lazy var sessionCookiesFile: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    .appendingPathComponent("Singularity", isDirectory: true)
+    .appendingPathComponent("session-cookies.plist")
+  var cookiesReady = false
+  var pendingOpens: [[String: Any]] = []
+  var cookieTimer: Timer?
+
+  // Restaura las cookies de sesión desde el archivo plist al inicio de la app. Los open del panel esperan
+  // a que termine, o la pestaña cargaría sin sesión; el tope de 3 s es por si setCookie no responde.
+  func restoreSessionCookies() {
+    let saved = (try? Data(contentsOf: sessionCookiesFile))
+      .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [[String: Any]] } ?? []
+    let store = dataStore.httpCookieStore
+    let group = DispatchGroup()
+    for props in saved {
+      let keyed = Dictionary(props.map { (HTTPCookiePropertyKey($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
+      guard let cookie = HTTPCookie(properties: keyed) else { continue }
+      group.enter()
+      store.setCookie(cookie) { group.leave() }
+    }
+    group.notify(queue: .main) { [weak self] in self?.cookiesRestored() }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.cookiesRestored() }
+  }
+
+  // Se ejecuta tras restaurar todas las cookies; procesa las pestañas pendientes e inicia el guardado
+  // cada 60 s, por si la app muere sin pasar por applicationWillTerminate.
+  func cookiesRestored() {
+    guard !cookiesReady else { return }
+    cookiesReady = true
+    let opens = pendingOpens
+    pendingOpens = []
+    opens.forEach { handle($0) }
+    cookieTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.saveSessionCookies() }
+  }
+
+  // Guarda las cookies de sesión en formato plist, solo los valores compatibles con plist (URL como string, Date, String, NSNumber), y con permisos 0600 para seguridad.
+  func saveSessionCookies(then done: (() -> Void)? = nil) {
+    dataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+      guard let self else { done?(); return }
+      let list: [[String: Any]] = cookies.filter(\.isSessionOnly).compactMap { cookie in
+        guard let props = cookie.properties else { return nil }
+        var out: [String: Any] = [:]
+        for (key, value) in props {
+          if let url = value as? URL { out[key.rawValue] = url.absoluteString }
+          else if value is String || value is Date || value is NSNumber { out[key.rawValue] = value }
+        }
+        return out
+      }
+      if let data = try? PropertyListSerialization.data(fromPropertyList: list, format: .binary, options: 0) {
+        try? FileManager.default.createDirectory(at: self.sessionCookiesFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: self.sessionCookiesFile.path, contents: data, attributes: [.posixPermissions: 0o600])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: self.sessionCookiesFile.path)
+      }
+      done?()
     }
   }
 
@@ -1006,6 +1082,14 @@ final class BrowserHost: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloa
     panel.allowsMultipleSelection = parameters.allowsMultipleSelection
     panel.canChooseDirectories = parameters.allowsDirectories
     panel.begin { completionHandler($0 == .OK ? panel.urls : nil) }
+  }
+
+  // Solicita al usuario permiso para acceso a cámara o micrófono, evitando denegar o conceder automáticamente.
+  // Requiere NSCameraUsageDescription y NSMicrophoneUsageDescription en Info.plist.
+  func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+               initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
+               decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+    decisionHandler(.prompt)
   }
 
   func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,

@@ -57,6 +57,8 @@ cat >"$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSCameraUsageDescription</key><string>Las páginas del navegador de Singularity pueden pedir la cámara, por ejemplo para videollamadas.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Las páginas del navegador de Singularity pueden pedir el micrófono, por ejemplo para videollamadas.</string>
   <key>NSAppTransportSecurity</key>
   <dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict>
@@ -103,8 +105,16 @@ printf '%s\n' "$ROOT" >"$RES/app/repo-root"
 # node-pty 1.1.0 no marca spawn-helper como ejecutable; sin eso la terminal no abre
 chmod +x "$RES/app/node_modules/node-pty/prebuilds/"darwin-*/spawn-helper
 
-# Firma ad-hoc: al tocar Resources la firma original del applet deja de valer
-codesign --force --deep --sign - "$APP"
+# Se refirma: al tocar Resources la firma original del applet deja de valer
+# ID de firma para el certificado autofirmado; por defecto "Singularity Dev"
+# permite mantener el "Permitir siempre" en macOS entre builds
+SIGN_ID="${SIGN_ID:-Singularity Dev}"
+if security find-identity -p codesigning | grep -qF "\"$SIGN_ID\""; then
+  codesign --force --deep --sign "$SIGN_ID" "$APP"
+else
+  echo "Aviso: no hay certificado \"$SIGN_ID\"; firma ad-hoc (el llavero volverá a pedir permiso tras cada build)" >&2
+  codesign --force --deep --sign - "$APP"
+fi
 
 echo "→ Empaquetando el DMG"
 STAGE="$WORK/dmg"
