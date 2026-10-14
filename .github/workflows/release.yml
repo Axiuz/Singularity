@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    # Ignora cambios en archivos de documentación (.md) y LICENSE para que no se genere una release al modificarlos.
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+  workflow_dispatch:
+
+# No cancela el workflow en progreso: dos pushes seguidos calcularían la misma versión, así que se encolan.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # El build requiere herramientas específicas de macOS (swiftc, lipo, hdiutil, codesign), por lo que debe ejecutarse en un entorno macOS.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Se descargan todos los commits y tags para poder obtener los tags de versión en el cálculo de la versión del release.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: orquestador-agentes/pnpm-lock.yaml
+
+      # Se ejecutan los tests antes de compilar y publicar el release para garantizar estabilidad; si fallan, no se genera el release.
+      - name: Tests
+        working-directory: orquestador-agentes
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test
+
+      # La versión se deriva de los tags existentes en el repositorio: el major.minor viene del package.json, y el patch es el último tag v<major.minor>.* + 1, o .0 si no hay tags.
+      # Sale de tags y no de un commit del bot a main, para no chocar con los pushes del autor.
+      - name: Calcular versión
+        id: version
+        run: |
+          base=$(node -p "require('./orquestador-agentes/package.json').version.split('.').slice(0,2).join('.')")
+          last=$(git tag --list "v$base.*" --sort=-v:refname | head -n1)
+          if [ -z "$last" ]; then
+            next="$base.0"
+          else
+            next="$base.$(( ${last##*.} + 1 ))"
+          fi
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "Versión: $next"
+
+      # VERSION sobreescribe la versión de package.json solo para este build; sin certificado el script firma ad-hoc.
+      - name: Compilar DMG
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash Scripts/build-dmg.sh
+
+      - name: Publicar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" "dist/Singularity-$VERSION.dmg" \
+            --title "Singularity $VERSION" \
+            --target "$GITHUB_SHA" \
+            --generate-notes

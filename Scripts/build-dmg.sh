@@ -11,7 +11,7 @@ DIST="$ROOT/dist"
 WORK="$DIST/.next"
 APP="$WORK/Singularity.app"
 FINAL="$DIST/Singularity.app"
-VERSION="$(node -p "require('$SRC/package.json').version")"
+VERSION="${VERSION:-$(node -p "require('$SRC/package.json').version")}"
 DMG="$DIST/Singularity-$VERSION.dmg"
 
 # Restos de un build anterior que se cortó a medias: sin esto el .anterior de
