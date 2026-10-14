@@ -328,13 +328,18 @@ const CodeEditor = (() => {
   let gitState = null; // {repo, root, branch, detached, ahead, behind} de la carpeta abierta
   let gitSig = ""; // firma de rama + archivos cambiados: sin cambios no se repinta
 
-  const DEFAULT_PINNED = ["explorer", "search", "branches", "notes", "extensions"];
+  const DEFAULT_PINNED = ["explorer", "search", "branches", "notes", "extensions", "debug"];
   let pinned = readStore("ed.pinned", DEFAULT_PINNED);
   // La barra ya fijada en localStorage no conoce las vistas nuevas: se añaden
   // una vez, para que aparezcan sin tener que fijarlas a mano.
   if (!readStore("ed.pinned.branches", false)) {
     if (!pinned.includes("branches")) pinned = [...pinned, "branches"];
     writeStore("ed.pinned.branches", true);
+    writeStore("ed.pinned", pinned);
+  }
+  if (!readStore("ed.pinned.debug", false)) {
+    if (!pinned.includes("debug")) pinned = [...pinned, "debug"];
+    writeStore("ed.pinned.debug", true);
     writeStore("ed.pinned", pinned);
   }
   let view = readStore("ed.view", "explorer");
@@ -509,7 +514,12 @@ const CodeEditor = (() => {
       padding: { top: 8 },
       tabSize: 2,
       theme: "dispatch",
+      glyphMargin: true,
     });
+    editor.onMouseDown((e) => {
+      if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN && e.target.position) toggleBreakpoint(e.target.position.lineNumber);
+    });
+    editor.onDidChangeModel(() => renderDecorations());
     if (vsixTheme) applyTheme(vsixTheme);
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save());
     editor.onDidChangeCursorPosition((e) => {
@@ -554,6 +564,7 @@ const CodeEditor = (() => {
     { id: "branches", label: "Ramas", shortcut: "⇧⌘B", render: renderBranchesView },
     { id: "notes", label: "Notas", shortcut: "⇧⌘N", render: renderNotesView },
     { id: "extensions", label: "Extensiones", shortcut: "⇧⌘X", render: renderExtensionsView },
+    { id: "debug", label: "Ejecutar y depurar", shortcut: "⇧⌘D", render: renderDebugView },
     { id: "map", label: "Mapa de código", shortcut: "⇧⌘M", action: () => showTab("mapa") },
   ];
 
@@ -1658,6 +1669,412 @@ const CodeEditor = (() => {
     if (ev.phase === "start" || ev.phase === "done") renderStatus();
   });
 
+  // ---- Ejecutar y depurar ----
+  let dbgState = null;
+  const dbgPlans = new Map();
+  let dbgFrames = [];
+  let dbgFrameId = null;
+  let dbgScopes = [];
+  const dbgVars = new Map();
+  const dbgOpen = new Set();
+  let dbgLog = [];
+  let dbgLastDebug = false;
+  let consoleOpen = readStore("ed.console", false);
+  let breakpoints = readStore("ed.breakpoints", {});
+  let bpDecor = null;
+
+  const dbgActive = () => Boolean(dbgState && dbgState.running);
+  const dbgPaused = () => dbgActive() && dbgState.phase === "stopped";
+  const DBG_PHASE = { building: "compilando…", running: "en marcha", stopped: "en pausa", exited: "terminado" };
+
+  function runPlanFor(file) {
+    if (!file) return null;
+    if (dbgPlans.has(file)) return dbgPlans.get(file);
+    dbgPlans.set(file, null);
+    fetch(`/api/run?path=${encodeURIComponent(file)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        dbgPlans.set(file, data.plan || null);
+        if (file === activePath) renderStatus();
+        if (view === "debug" && sideOpen) renderView();
+      })
+      .catch(() => dbgPlans.delete(file));
+    return null;
+  }
+
+  async function loadRunState() {
+    try {
+      const data = await (await fetch("/api/run")).json();
+      dbgState = data.state || null;
+      dbgLog = data.log || [];
+      renderConsole();
+      renderStatus();
+      if (dbgPaused()) loadStack(dbgState.threadId);
+    } catch (_) {}
+  }
+
+  async function dap(command, args = {}) {
+    const res = await fetch("/api/run/dap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command, args }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data.body || {};
+  }
+
+  async function startRun(debug) {
+    if (!activePath || dbgActive()) return;
+    const entry = files.get(activePath);
+    if (entry && !entry.saved) await save();
+    dbgLastDebug = debug;
+    dbgLog = [];
+    setConsoleOpen(true);
+    try {
+      const res = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: activePath, debug, breakpoints }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        dbgPlans.delete(activePath);
+        appendLog([{ category: "error", text: `${data.error || `HTTP ${res.status}`}\n` }]);
+        if (data.install) appendLog([{ category: "info", text: `Instálalo desde la terminal: ${data.install}\n` }]);
+        return flash(data.error || `HTTP ${res.status}`, true);
+      }
+      dbgState = data.state;
+      renderStatus();
+      if (debug && (view !== "debug" || !sideOpen)) pickView("debug");
+    } catch (err) {
+      flash(err.message, true);
+    }
+  }
+
+  // Marca la sesión como terminada localmente para que Reiniciar no espere
+  // al evento SSE; también envía una solicitud DELETE para notificar al servidor
+  async function stopRun() {
+    if (!dbgActive()) return;
+    await fetch("/api/run", { method: "DELETE" }).catch(() => {});
+    dbgState = { ...dbgState, running: false, phase: "exited" };
+  }
+
+  async function restartRun() {
+    const file = dbgState && dbgState.file;
+    await stopRun();
+    if (file && file !== activePath) await openFile(file);
+    startRun(dbgLastDebug);
+  }
+
+  async function dbgControl(command) {
+    if (!dbgActive() || !dbgState.debug) return;
+    try {
+      await dap(command, { threadId: dbgState.threadId });
+    } catch (err) {
+      flash(err.message, true);
+    }
+  }
+
+  async function loadStack(threadId) {
+    try {
+      const st = await dap("stackTrace", { threadId, startFrame: 0, levels: 40 });
+      dbgFrames = st.stackFrames || [];
+      await selectFrame(dbgFrames.find((f) => f.source && f.source.path) || dbgFrames[0]);
+    } catch (err) {
+      flash(err.message, true);
+    }
+  }
+
+  // Un marco de la pila puede estar en un archivo del sistema, fuera de Proyectos:
+  // abrirlo haría saltar el error del editor, así que solo se abre lo alcanzable.
+  const reachable = (file) => Boolean(file && (files.has(file) || (root && file.startsWith(`${root}/`))));
+
+  async function selectFrame(frame) {
+    if (!frame) return;
+    dbgFrameId = frame.id;
+    dbgVars.clear();
+    dbgOpen.clear();
+    const sc = await dap("scopes", { frameId: frame.id });
+    dbgScopes = sc.scopes || [];
+    for (const scope of dbgScopes) {
+      if (scope.expensive) continue;
+      await loadVars(scope.variablesReference);
+      dbgOpen.add(scope.variablesReference);
+    }
+    const file = frame.source && frame.source.path;
+    if (reachable(file)) await openFile(file, { line: frame.line, column: frame.column || 1 });
+    renderDecorations();
+    if (view !== "debug" || !sideOpen) pickView("debug");
+    else renderView();
+  }
+
+  async function loadVars(ref) {
+    const body = await dap("variables", { variablesReference: ref });
+    dbgVars.set(ref, body.variables || []);
+  }
+
+  async function toggleVar(ref) {
+    if (dbgOpen.has(ref)) dbgOpen.delete(ref);
+    else {
+      dbgOpen.add(ref);
+      if (!dbgVars.has(ref)) await loadVars(ref).catch((err) => flash(err.message, true));
+    }
+    renderView();
+  }
+
+  function toggleBreakpoint(line, file = activePath) {
+    if (!file || !line) return;
+    const set = new Set(breakpoints[file] || []);
+    if (set.has(line)) set.delete(line);
+    else set.add(line);
+    if (set.size) breakpoints[file] = [...set].sort((a, b) => a - b);
+    else delete breakpoints[file];
+    writeStore("ed.breakpoints", breakpoints);
+    renderDecorations();
+    if (view === "debug" && sideOpen) renderView();
+    if (dbgActive() && dbgState.debug) {
+      dap("setBreakpoints", { source: { path: file }, breakpoints: (breakpoints[file] || []).map((l) => ({ line: l })) }).catch((err) =>
+        flash(err.message, true)
+      );
+    }
+  }
+
+  function renderDecorations() {
+    if (!editor || !monaco) return;
+    if (!bpDecor) bpDecor = editor.createDecorationsCollection();
+    const decos = (activePath ? breakpoints[activePath] || [] : []).map((line) => ({
+      range: new monaco.Range(line, 1, line, 1),
+      options: { glyphMarginClassName: "ed-bp", glyphMarginHoverMessage: { value: "Breakpoint (F9)" } },
+    }));
+    const frame = dbgPaused() && dbgFrames.find((f) => f.id === dbgFrameId);
+    if (frame && frame.source && frame.source.path === activePath) {
+      decos.push({
+        range: new monaco.Range(frame.line, 1, frame.line, 1),
+        options: { isWholeLine: true, className: "ed-dbg-line", glyphMarginClassName: "ed-dbg-arrow" },
+      });
+    }
+    bpDecor.set(decos);
+  }
+
+  function renderDebugView(host) {
+    const plan = runPlanFor(activePath);
+    const active = dbgActive();
+    const paused = dbgPaused();
+    const btn = (id, icon, title, on = true) =>
+      `<button class="ed-view-act" data-dbg="${id}" title="${escapeAttr(title)}"${on ? "" : " disabled"}>${EdIcons.view(icon)}</button>`;
+
+    let top;
+    if (active) {
+      top =
+        `<div class="ed-dbg-bar">` +
+        (dbgState.debug
+          ? (paused ? btn("continue", "continue", "Continuar  F5") : btn("pause", "pause", "Pausar  F6")) +
+            btn("next", "stepOver", "Paso por encima  F10", paused) +
+            btn("stepIn", "stepInto", "Entrar  F11", paused) +
+            btn("stepOut", "stepOut", "Salir  ⇧F11", paused)
+          : "") +
+        btn("restart", "reload", "Reiniciar  ⇧⌘F5") +
+        btn("stop", "stop", "Parar  ⇧F5") +
+        `<span class="ed-dbg-phase">${escapeHtml(baseName(dbgState.file))} · ${escapeHtml(DBG_PHASE[dbgState.phase] || dbgState.phase)}</span></div>`;
+    } else if (!activePath) {
+      top = '<div class="ed-view-empty">Abre un archivo para ejecutarlo o depurarlo.</div>';
+    } else if (!plan) {
+      top = `<div class="ed-view-empty">${dbgPlans.has(activePath) && dbgPlans.get(activePath) === null ? "Este tipo de archivo no se ejecuta desde aquí." : "…"}</div>`;
+    } else {
+      const debugMissing = plan.debug && plan.debug.missing.length;
+      top =
+        `<div class="ed-dbg-start">` +
+        `<button class="ed-chip on" data-dbg="run" title="Ejecutar sin depurar  ⌃F5"${plan.missing.length ? " disabled" : ""}>${EdIcons.view("run")} Ejecutar</button>` +
+        `<button class="ed-chip" data-dbg="debug" title="Depurar  F5"${!plan.debug || debugMissing || plan.missing.length ? " disabled" : ""}>${EdIcons.view("debug")} Depurar</button>` +
+        `</div><div class="ed-dbg-note">${escapeHtml(plan.label)} · ${escapeHtml(baseName(plan.file))}` +
+        (plan.missing.length ? `<br>Falta en este Mac: ${escapeHtml(plan.missing.join(", "))}` : "") +
+        (!plan.debug ? "<br>Este lenguaje todavía solo se ejecuta, sin depurador." : "") +
+        (debugMissing
+          ? `<br>Para depurar falta ${escapeHtml(plan.debug.missing.join(", "))}.` +
+            (plan.debug.install ? ` En la terminal:<code>${escapeHtml(plan.debug.install)}</code>` : "")
+          : "") +
+        `</div>`;
+    }
+
+    const varRows = (ref, depth) => {
+      const list = dbgVars.get(ref);
+      if (!list) return `<div class="ed-dbg-row muted" style="--d:${depth}">…</div>`;
+      if (!list.length) return `<div class="ed-dbg-row muted" style="--d:${depth}">vacío</div>`;
+      return list
+        .map((v) => {
+          const kids = v.variablesReference > 0 && depth < 12;
+          const open = kids && dbgOpen.has(v.variablesReference);
+          return (
+            `<button class="ed-dbg-row" style="--d:${depth}"${kids ? ` data-var="${v.variablesReference}"` : ""} title="${escapeAttr(v.type || "")}">` +
+            `<span class="ed-dbg-caret">${kids ? EdIcons.view(open ? "caretDown" : "caret") : ""}</span>` +
+            `<span class="ed-dbg-name">${escapeHtml(v.name)}</span><span class="ed-dbg-val">${escapeHtml(v.value)}</span></button>` +
+            (open ? varRows(v.variablesReference, depth + 1) : "")
+          );
+        })
+        .join("");
+    };
+
+    const vars = paused
+      ? dbgScopes
+          .map((s) => {
+            const open = dbgOpen.has(s.variablesReference);
+            return (
+              `<button class="ed-dbg-row ed-dbg-scope" style="--d:0" data-var="${s.variablesReference}">` +
+              `<span class="ed-dbg-caret">${EdIcons.view(open ? "caretDown" : "caret")}</span><span class="ed-dbg-name">${escapeHtml(s.name)}</span></button>` +
+              (open ? varRows(s.variablesReference, 1) : "")
+            );
+          })
+          .join("") || '<div class="ed-view-empty">Sin variables.</div>'
+      : `<div class="ed-view-empty">${active ? "Se ven al pausar en un breakpoint." : "Sin sesión."}</div>`;
+
+    const stack = paused
+      ? dbgFrames
+          .map(
+            (f) =>
+              `<button class="ed-dbg-row${f.id === dbgFrameId ? " on" : ""}" style="--d:0" data-frame="${f.id}">` +
+              `<span class="ed-dbg-name">${escapeHtml(f.name)}</span>` +
+              `<span class="ed-dbg-val">${escapeHtml(f.source ? `${f.source.name || baseName(f.source.path || "")}:${f.line}` : "")}</span></button>`
+          )
+          .join("")
+      : '<div class="ed-view-empty">—</div>';
+
+    const bpList = Object.entries(breakpoints).flatMap(([file, lines]) => lines.map((line) => ({ file, line })));
+    const bps = bpList.length
+      ? bpList
+          .map(
+            (b) =>
+              `<div class="ed-dbg-bp"><button class="ed-dbg-row" style="--d:0" data-bp-open="${escapeAttr(b.file)}" data-line="${b.line}">` +
+              `<span class="ed-bp-dot"></span><span class="ed-dbg-name">${escapeHtml(baseName(b.file))}</span><span class="ed-dbg-val">${b.line}</span></button>` +
+              `<button class="ed-view-act" data-bp-del="${escapeAttr(b.file)}" data-line="${b.line}" title="Quitar">${EdIcons.view("close")}</button></div>`
+          )
+          .join("")
+      : '<div class="ed-view-empty">Clic en el margen izquierdo del editor, o F9, para poner uno.</div>';
+
+    host.innerHTML =
+      viewHead("EJECUTAR Y DEPURAR", [{ id: "console", icon: "terminal", title: "Consola de depuración" }]) +
+      top +
+      `<div class="ed-dbg-sec">VARIABLES</div><div class="ed-dbg-list">${vars}</div>` +
+      `<div class="ed-dbg-sec">PILA DE LLAMADAS</div><div class="ed-dbg-list">${stack}</div>` +
+      `<div class="ed-dbg-sec">BREAKPOINTS</div><div class="ed-dbg-list">${bps}</div>`;
+
+    host.querySelector('[data-act="console"]').addEventListener("click", () => setConsoleOpen(!consoleOpen));
+    host.querySelectorAll("[data-dbg]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const id = b.dataset.dbg;
+        if (id === "run") return startRun(false);
+        if (id === "debug") return startRun(true);
+        if (id === "stop") return stopRun();
+        if (id === "restart") return restartRun();
+        dbgControl(id);
+      })
+    );
+    host.querySelectorAll("[data-var]").forEach((b) => b.addEventListener("click", () => toggleVar(Number(b.dataset.var))));
+    host.querySelectorAll("[data-frame]").forEach((b) =>
+      b.addEventListener("click", () => selectFrame(dbgFrames.find((f) => String(f.id) === b.dataset.frame)).catch((err) => flash(err.message, true)))
+    );
+    host.querySelectorAll("[data-bp-open]").forEach((b) =>
+      b.addEventListener("click", () => openFile(b.dataset.bpOpen, { line: Number(b.dataset.line) }))
+    );
+    host.querySelectorAll("[data-bp-del]").forEach((b) =>
+      b.addEventListener("click", () => toggleBreakpoint(Number(b.dataset.line), b.dataset.bpDel))
+    );
+  }
+
+  function setConsoleOpen(open) {
+    consoleOpen = open;
+    writeStore("ed.console", open);
+    renderConsole();
+    if (editor) requestAnimationFrame(() => editor.layout());
+  }
+
+  const logHtml = (chunks) => chunks.map((c) => `<span class="c-${escapeAttr(c.category || "stdout")}">${escapeHtml(c.text)}</span>`).join("");
+
+  function renderConsole() {
+    const host = $("#edConsole");
+    host.hidden = !consoleOpen;
+    if (!consoleOpen) return;
+    const phase = dbgState ? DBG_PHASE[dbgState.phase] || dbgState.phase : "";
+    host.innerHTML = `
+      <div class="ed-problems-head">
+        <span>CONSOLA DE DEPURACIÓN</span>
+        <span class="mono muted small">${escapeHtml(phase)}</span>
+        <button class="ed-view-act push" data-clear title="Limpiar">${EdIcons.view("trash")}</button>
+        <button class="ed-view-act" data-close title="Cerrar">${EdIcons.view("close")}</button>
+      </div>
+      <pre class="ed-console-log" id="edConsoleLog">${logHtml(dbgLog)}</pre>
+      <input class="ed-console-input" id="edConsoleInput" spellcheck="false" placeholder="Evaluar una expresión (en pausa)">`;
+    const pre = host.querySelector("#edConsoleLog");
+    pre.scrollTop = pre.scrollHeight;
+    host.querySelector("[data-clear]").addEventListener("click", () => {
+      dbgLog = [];
+      pre.innerHTML = "";
+    });
+    host.querySelector("[data-close]").addEventListener("click", () => setConsoleOpen(false));
+    host.querySelector("#edConsoleInput").addEventListener("keydown", async (e) => {
+      if (e.key !== "Enter" || !e.target.value.trim()) return;
+      const expression = e.target.value.trim();
+      e.target.value = "";
+      appendLog([{ category: "info", text: `› ${expression}\n` }]);
+      try {
+        const body = await dap("evaluate", { expression, frameId: dbgFrameId || undefined, context: "repl" });
+        appendLog([{ category: "stdout", text: `${body.result}\n` }]);
+      } catch (err) {
+        appendLog([{ category: "error", text: `${err.message}\n` }]);
+      }
+    });
+  }
+
+  function appendLog(chunks) {
+    dbgLog.push(...chunks);
+    if (dbgLog.length > 3000) dbgLog = dbgLog.slice(-2000);
+    const pre = $("#edConsoleLog");
+    if (!pre) return;
+    const stick = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+    pre.insertAdjacentHTML("beforeend", logHtml(chunks));
+    if (stick) pre.scrollTop = pre.scrollHeight;
+  }
+
+  // Maneja las teclas F5/F6/F9/F10/F11 como en VS Code: F5 para iniciar, F6 para pausar,
+  // F9 para togglear breakpoints, F10 para next, F11 para stepIn o stepOut
+  function debugKey(e) {
+    const paused = dbgPaused();
+    if (e.key === "F5") {
+      if (e.shiftKey && (e.metaKey || e.ctrlKey)) return restartRun();
+      if (e.shiftKey) return stopRun();
+      if (e.ctrlKey) return startRun(false);
+      if (paused) return dbgControl("continue");
+      if (!dbgActive()) return startRun(true);
+      return;
+    }
+    if (e.key === "F6" && dbgActive() && !paused) return dbgControl("pause");
+    if (e.key === "F9" && editor) return toggleBreakpoint(editor.getPosition().lineNumber);
+    if (!paused) return;
+    if (e.key === "F10") return dbgControl("next");
+    if (e.key === "F11") return dbgControl(e.shiftKey ? "stepOut" : "stepIn");
+  }
+
+  window.addEventListener("dap:state", (e) => {
+    const prev = dbgState;
+    dbgState = e.detail || null;
+    if (!dbgPaused()) {
+      dbgFrames = [];
+      dbgScopes = [];
+      dbgVars.clear();
+      dbgFrameId = null;
+    }
+    if (!prev || !dbgState || prev.id !== dbgState.id) renderConsole();
+    else {
+      const phase = document.querySelector("#edConsole .ed-problems-head .mono");
+      if (phase) phase.textContent = DBG_PHASE[dbgState.phase] || dbgState.phase;
+    }
+    renderStatus();
+    renderDecorations();
+    if (view === "debug" && sideOpen) renderView();
+  });
+  window.addEventListener("dap:output", (e) => appendLog((e.detail && e.detail.chunks) || []));
+  window.addEventListener("dap:stopped", (e) => loadStack(e.detail && e.detail.threadId));
+
   // El diagnóstico es del orquestador, no de la carpeta abierta: a diferencia de
   // "compilar", que necesita gradlew, este botón está siempre.
   let diag = { running: false, done: 0, total: 0, failed: 0, ok: null };
@@ -1754,6 +2171,7 @@ const CodeEditor = (() => {
       : "sin problemas";
     const fmt = formatter();
     const host = $("#edStatus");
+    const runPlan = runPlanFor(activePath);
 
     const branch = gitState && gitState.repo ? (gitState.detached ? "HEAD suelto" : gitState.branch || "sin rama") : "";
     const track = gitState ? [gitState.ahead ? `↑${gitState.ahead}` : "", gitState.behind ? `↓${gitState.behind}` : ""].filter(Boolean).join(" ") : "";
@@ -1773,6 +2191,14 @@ const CodeEditor = (() => {
             buildRunning ? "compilando…" : "compilar"
           }</button>`
         : "") +
+      (dbgActive()
+        ? `<button class="ed-status-item act ed-status-live" data-stop-run title="Parar  ⇧F5">■ ${escapeHtml(baseName(dbgState.file))} · ${escapeHtml(
+            DBG_PHASE[dbgState.phase] || dbgState.phase
+          )}</button>`
+        : runPlan
+        ? `<button class="ed-status-item act" data-run-file title="Ejecutar sin depurar  ⌃F5">▶ ejecutar</button>` +
+          (runPlan.debug ? `<button class="ed-status-item act" data-debug-file title="Depurar  F5">depurar</button>` : "")
+        : "") +
       `<button class="ed-status-item act${diagClass()}" data-diag${diag.running ? " disabled" : ""} ` +
       `title="Comprobaciones del orquestador; el informe entero está en Conexión">${escapeHtml(diagLabel())}</button>` +
       `<span class="push"></span>` +
@@ -1789,6 +2215,9 @@ const CodeEditor = (() => {
     host.querySelector("[data-lint]")?.addEventListener("click", () => runLinters());
     host.querySelector("[data-format]")?.addEventListener("click", () => formatActive());
     host.querySelector("[data-build]")?.addEventListener("click", () => buildHere());
+    host.querySelector("[data-run-file]")?.addEventListener("click", () => startRun(false));
+    host.querySelector("[data-debug-file]")?.addEventListener("click", () => startRun(true));
+    host.querySelector("[data-stop-run]")?.addEventListener("click", () => stopRun());
     host.querySelector("[data-diag]")?.addEventListener("click", () => runDiag());
   }
 
@@ -2135,6 +2564,7 @@ const CodeEditor = (() => {
       setSide(sideOpen);
       renderStatus();
       loadDiag();
+      loadRunState();
     }
     if (!root) {
       const first = projects.find((p) => p.exists !== false);
@@ -2153,10 +2583,14 @@ const CodeEditor = (() => {
     EdExtensions.init();
   }
 
-  const SHORTCUTS = { e: "explorer", f: "search", b: "branches", n: "notes", x: "extensions", m: "map" };
+  const SHORTCUTS = { e: "explorer", f: "search", b: "branches", n: "notes", x: "extensions", m: "map", d: "debug" };
 
   window.addEventListener("keydown", (e) => {
     if (!document.querySelector("#tab-editor:is(.active, .side)")) return;
+    if (/^F(5|6|9|10|11)$/.test(e.key)) {
+      e.preventDefault();
+      return debugKey(e);
+    }
     const meta = e.metaKey || e.ctrlKey;
     if (!meta) return;
     const key = e.key.toLowerCase();

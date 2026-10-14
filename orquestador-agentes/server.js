@@ -22,6 +22,9 @@ const androidlib = require("./android");
 const gradlelib = require("./gradle");
 const vsix = require("./vsix");
 const toolsuite = require("./tools");
+const trackers = require("./trackers");
+const runners = require("./runners");
+const daplib = require("./dap");
 
 const DEFAULT_DATA_DIR = path.join(__dirname, "data");
 // La app de macOS pasa ORQ_DATA_DIR para guardar los datos fuera del bundle
@@ -53,6 +56,7 @@ const COMMIT_PLANS_PATH = path.join(DATA_DIR, "commitplans.json");
 // Notas y to-dos, uno por carpeta de proyecto. Tampoco se siembra: es trabajo
 // del usuario y lleva rutas reales.
 const NOTES_PATH = path.join(DATA_DIR, "notes.json");
+const TRACKERS_PATH = path.join(DATA_DIR, "trackers.json");
 
 const loadJSON = (p) => JSON.parse(fs.readFileSync(p, "utf-8"));
 const saveJSON = (p, o) => fs.writeFileSync(p, JSON.stringify(o, null, 2));
@@ -427,6 +431,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
     sessions.forEach(killSession);
     preview.stopAll();
     devserver.stopAll();
+    runner.stopAll();
     usageTracker.stop();
     process.exit(0);
   });
@@ -2600,6 +2605,80 @@ app.post("/api/android/url", async (req, res) => {
   await androidWrite(res, await android.openUrl({ serial: req.body.serial, url: target }));
 });
 
+// ---- Ejecutar y depurar ----
+const runner = daplib.create({ onEvent: (type, payload) => broadcast(`dap:${type}`, payload) });
+const findBin = runners.makeFinder();
+const moduleCache = new Map();
+// Verifica si un módulo Python está instalado, con caché de 30 segundos
+// para evitar llamar a python3 en cada solicitud. POST /api/run la vacía para
+// notar una instalación reciente.
+const hasModule = (name) => {
+  const hit = moduleCache.get(name);
+  if (hit && Date.now() - hit.at < 30000) return hit.ok;
+  const ok = runners.pythonHasModule(findBin)(name);
+  moduleCache.set(name, { ok, at: Date.now() });
+  return ok;
+};
+
+// Los breakpoints llegan del panel: cada ruta pasa por Proyectos y solo quedan
+// líneas enteras positivas, con un máximo de 200 archivos y 500 líneas por archivo.
+function cleanBreakpoints(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [file, lines] of Object.entries(raw).slice(0, 200)) {
+    const real = insideProject(file);
+    if (!real || !Array.isArray(lines)) continue;
+    const valid = [...new Set(lines.map(Number).filter((n) => Number.isInteger(n) && n > 0 && n < 1e6))].slice(0, 500);
+    if (valid.length) out[real] = valid;
+  }
+  return out;
+}
+
+app.get("/api/run", (req, res) => {
+  const base = { state: runner.state(), log: runner.log() };
+  if (!req.query.path) return res.json(base);
+  const file = insideProject(req.query.path);
+  if (!file || isDirectory(file)) return res.status(403).json(FORBIDDEN);
+  const plan = runners.planFor(file, { find: findBin, hasModule });
+  res.json({ ...base, plan });
+});
+
+app.post("/api/run", (req, res) => {
+  const file = insideProject(req.body && req.body.path);
+  if (!file || isDirectory(file)) return res.status(403).json(FORBIDDEN);
+  moduleCache.clear();
+  const plan = runners.planFor(file, { find: findBin, hasModule });
+  if (!plan) return res.status(400).json({ error: "No sé ejecutar ese tipo de archivo" });
+  const started = runner.start({ plan, debug: Boolean(req.body.debug), breakpoints: cleanBreakpoints(req.body.breakpoints) });
+  if (!started.ok) return res.status(409).json({ error: started.output, install: started.install || null });
+  res.status(202).json(started);
+});
+
+app.post("/api/run/dap", async (req, res) => {
+  const command = req.body && req.body.command;
+  const bad = runners.requestError(command);
+  if (bad) return res.status(400).json({ error: bad });
+  const args = req.body.args && typeof req.body.args === "object" ? req.body.args : {};
+  // setBreakpoints lleva una ruta: se vuelve a validar contra Proyectos.
+  if (command === "setBreakpoints") {
+    const file = insideProject(args.source && args.source.path);
+    if (!file) return res.status(403).json(FORBIDDEN);
+    const lines = cleanBreakpoints({ [file]: (args.breakpoints || []).map((b) => b && b.line) })[file] || [];
+    args.source = { path: file };
+    args.breakpoints = lines.map((line) => ({ line }));
+  }
+  try {
+    res.json({ ok: true, body: await runner.request(command, args) });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
+app.delete("/api/run", async (req, res) => {
+  if (!(await runner.stop())) return res.status(404).json({ error: "No hay nada en marcha" });
+  res.json({ ok: true });
+});
+
 // ---- Compilar con Gradle ----
 // Un build a la vez, con el log en vivo por SSE: una compilación de Android son
 // minutos, así que el POST contesta 202 y lo demás sale por `android:build`.
@@ -2941,6 +3020,53 @@ app.post("/api/debug/run", (req, res) => {
     .finally(() => {
       debugRunning = null;
     });
+});
+
+// ---- Navegador: lista de rastreadores ----
+const EASYPRIVACY_URL = "https://easylist.to/easylist/easyprivacy.txt";
+const BLOCKLIST_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+let blocklist = null;
+let blocklistFetch = null;
+
+// Carga o descarga la lista de rastreadores de EasyPrivacy con un máximo de edad de 7 días.
+// Usa caché local si está disponible (también si la descarga falla) y evita descargas simultáneas mediante blocklistFetch.
+function loadBlocklist() {
+  if (!blocklist && fs.existsSync(TRACKERS_PATH)) {
+    try {
+      blocklist = loadJSON(TRACKERS_PATH);
+    } catch {}
+  }
+  if (blocklist && Date.now() - blocklist.fetchedAt < BLOCKLIST_MAX_AGE_MS) return Promise.resolve(blocklist);
+  blocklistFetch ??= fetch(EASYPRIVACY_URL, { signal: AbortSignal.timeout(30000) })
+    .then(async (out) => {
+      if (!out.ok) throw new Error(`EasyPrivacy respondió ${out.status}`);
+      const text = await out.text();
+      const rules = trackers.toRules(text);
+      if (!rules.length) throw new Error("EasyPrivacy no trajo reglas");
+      blocklist = { version: trackers.listVersion(text) || String(Date.now()), fetchedAt: Date.now(), rules };
+      fs.writeFileSync(TRACKERS_PATH, JSON.stringify(blocklist));
+      return blocklist;
+    })
+    .catch((err) => {
+      if (blocklist) return blocklist;
+      throw err;
+    })
+    .finally(() => {
+      blocklistFetch = null;
+    });
+  return blocklistFetch;
+}
+
+// Devuelve los metadatos de la lista y, solo con ?rules=1, las reglas (unos 5 MB).
+// Responde 502 si no hay ni descarga ni caché.
+app.get("/api/browser/blocklist", async (req, res) => {
+  try {
+    const list = await loadBlocklist();
+    const meta = { version: list.version, count: list.rules.length, fetchedAt: list.fetchedAt };
+    res.json(req.query.rules ? { ...meta, rules: JSON.stringify(list.rules) } : meta);
+  } catch (err) {
+    res.status(502).json({ error: `No se pudo bajar la lista de rastreadores: ${err.message}` });
+  }
 });
 
 // ---- Config ----
