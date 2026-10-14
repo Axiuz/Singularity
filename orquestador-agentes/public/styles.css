@@ -382,7 +382,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
 .plan-title { font-size: 15px; font-weight: 600; }
 .plan-goal { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .plan-progress { flex: 1; display: flex; align-items: center; gap: 10px; }
-.progress { flex: 1; height: 5px; border-radius: 3px; background: var(--panel-3); overflow: hidden; }
+/* Se acota el contenedor de progreso para evitar que el botón '+ Agregar la tarea' se corte, ya que antes heredaba height y overflow hidden de la clase .progress en la columna 'EN PROGRESO'. */
+.plan-progress .progress { flex: 1; height: 5px; border-radius: 3px; background: var(--panel-3); overflow: hidden; }
 .progress-bar { height: 100%; width: 0; border-radius: 3px; background: var(--accent); transition: width 0.4s ease; }
 
 #planWrap { display: flex; flex-direction: column; gap: 14px; }
