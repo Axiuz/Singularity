@@ -3,7 +3,8 @@ const assert = require("node:assert/strict");
 const { cliOf, modeOf, sessionCommand, planStep, cardsSection } = require("../session");
 
 test("cliOf con valor válido devuelve el CLI correspondiente", () => {
-  assert.equal(cliOf({ session_cli: "gemini" }), "gemini");
+  assert.equal(cliOf({ session_cli: "antigravity" }), "antigravity");
+  assert.equal(cliOf({ session_cli: "gemini" }), "antigravity");
 });
 
 test("cliOf con valor desconocido devuelve 'claude'", () => {
@@ -34,8 +35,8 @@ test("modeOf con config sin orchestration_mode devuelve 'local'", () => {
   assert.equal(modeOf({}), "local");
 });
 
-test("sessionCommand con cli 'gemini' usa -i", () => {
-  assert.match(sessionCommand("gemini"), /gemini -i "\$DISPATCH_INSTRUCTIONS"/);
+test("sessionCommand con cli 'antigravity' usa agy -i", () => {
+  assert.match(sessionCommand("antigravity"), /^agy -i "\$DISPATCH_INSTRUCTIONS"$/);
 });
 
 test("sessionCommand con cli 'codex' pasa instrucciones como argumento", () => {
@@ -56,8 +57,8 @@ test("planStep con cli 'claude' menciona 'plan mode'", () => {
   assert.match(planStep("claude"), /plan mode/);
 });
 
-test("planStep con cli 'gemini' no menciona 'plan mode'", () => {
-  assert.doesNotMatch(planStep("gemini"), /plan mode/);
+test("planStep con cli 'antigravity' no menciona 'plan mode'", () => {
+  assert.doesNotMatch(planStep("antigravity"), /plan mode/);
 });
 
 test("cardsSection con cli 'claude' menciona que las tarjetas 'te llegan solas'", () => {

@@ -1,25 +1,31 @@
-// Decide con qué CLI (Claude Code, Gemini CLI, Codex CLI) arranca la pestaña Sesión
+// Decide con qué CLI (Claude Code, Antigravity CLI, Codex CLI) arranca la pestaña Sesión
 // y qué partes de las instrucciones cambian según la CLI y el modo de trabajo (local
 // con agentes de LM Studio, solo IA de pago, o IA de pago con sus propios subagentes).
 
 const CLIS = {
   claude: { name: "Claude Code" },
-  gemini: { name: "Gemini CLI" },
+  antigravity: { name: "Antigravity CLI" },
   codex: { name: "Codex CLI" },
 };
 const MODES = ["local", "solo", "subagents"];
 
 // Cualquier valor raro en config cae a "claude" / "local": un ajuste mal guardado
 // nunca debe impedir abrir la sesión.
-const cliOf = (config) => (CLIS[config?.session_cli] ? config.session_cli : "claude");
+// Google retiró Gemini CLI: un "gemini" guardado pasa a "antigravity" en vez de
+// caer a "claude" sin avisar.
+const LEGACY_CLIS = { gemini: "antigravity" };
+const cliOf = (config) => {
+  const cli = LEGACY_CLIS[config?.session_cli] || config?.session_cli;
+  return CLIS[cli] ? cli : "claude";
+};
 const modeOf = (config) => (MODES.includes(config?.orchestration_mode) ? config.orchestration_mode : "local");
 
-// Gemini y Codex reciben las instrucciones como primer mensaje (-i o argumento) porque
-// no tienen un flag para añadir al system prompt; GEMINI_SYSTEM_MD reemplazaría el suyo
-// entero. Solo Claude recibe --settings con los hooks: sin ellos, Gemini y Codex no
+// Antigravity y Codex reciben las instrucciones como primer mensaje (-i o argumento)
+// porque no tienen un flag para añadir al system prompt. Solo Claude recibe --settings
+// con los hooks: sin ellos, Antigravity y Codex no
 // avisan de cuándo terminan su turno y las tarjetas no se les pueden entregar solas.
 function sessionCommand(cli, { remote = false } = {}) {
-  if (cli === "gemini") return 'gemini -i "$DISPATCH_INSTRUCTIONS"';
+  if (cli === "antigravity") return 'agy -i "$DISPATCH_INSTRUCTIONS"';
   if (cli === "codex") return 'codex "$DISPATCH_INSTRUCTIONS"';
   const rc = remote ? ' --remote-control "$DISPATCH_RC_NAME"' : "";
   const awake = remote ? "/usr/bin/caffeinate -ims " : "";

@@ -306,7 +306,7 @@ además la sesión de Claude Code dentro, y desde el Editor se carga como raíz 
 | `stall_timeout_ms` | `90000` | Corta el run si el modelo no envía nada en ese tiempo |
 | `run_timeout_ms` | `600000` | Tope duro de duración de un run |
 | `max_prompt_chars` | `16000` | Prompts más largos se rechazan con 413 (~4000 tokens) |
-| `session_cli` | `claude` | CLI que arranca la pestaña **Sesión**: `claude`, `gemini` o `codex` |
+| `session_cli` | `claude` | CLI que arranca la pestaña **Sesión**: `claude`, `antigravity` o `codex` |
 | `orchestration_mode` | `local` | `local` (agentes de LM Studio), `solo` (sin agentes) o `subagents` (subagentes de la propia CLI) |
 
 Variables de entorno:
@@ -516,7 +516,7 @@ Se eligen en **Configuración** (*CLI de la sesión* y *Modo de trabajo*) y se a
 | CLI de sesión | Comportamiento |
 |--------------|----------------|
 | `claude`     | Usa Claude Code con hooks para notificar al panel cuando termina el turno. Las tarjetas del tablero llegan automáticamente. |
-| `gemini`     | Ejecuta `gemini -i "<instrucciones>"`. Recibe las tarjetas mediante una petición GET a `/api/plan` al final de cada tarea. |
+| `antigravity` | Ejecuta `agy -i "<instrucciones>"`. Recibe las tarjetas mediante una petición GET a `/api/plan` al final de cada tarea. |
 | `codex`      | Ejecuta `codex "<instrucciones>"`. Recibe las tarjetas mediante una petición GET a `/api/plan` al final de cada tarea. |
 
 | Modo de trabajo | Comportamiento |
@@ -525,7 +525,7 @@ Se eligen en **Configuración** (*CLI de la sesión* y *Modo de trabajo*) y se a
 | `solo`          | Solo la IA de pago. Hace todos los pasos, incluidos comentarios y documentos. `/api/manifest` devuelve lista vacía de agentes. |
 | `subagents`     | IA de pago + subagentes propios. Cada subagente es un paso con `agent: "subagente"`. La CLI mueve la tarjeta a `progress`, `review` o `errors` mediante `curl`. |
 
-Si el valor de configuración es desconocido, se usa por defecto `claude` y `local`. Con Gemini o Codex se oculta la tarjeta de tokens de Claude Code, que sale de sus transcripts.
+Si el valor de configuración es desconocido, se usa por defecto `claude` y `local`. Un `gemini` guardado de antes se trata como `antigravity`, porque Google retiró Gemini CLI. Con Antigravity o Codex se oculta la tarjeta de tokens de Claude Code, que sale de sus transcripts.
 
 ### Notas y to-dos
 
