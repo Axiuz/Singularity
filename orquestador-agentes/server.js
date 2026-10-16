@@ -25,6 +25,7 @@ const toolsuite = require("./tools");
 const trackers = require("./trackers");
 const runners = require("./runners");
 const daplib = require("./dap");
+const sessionlib = require("./session");
 
 const DEFAULT_DATA_DIR = path.join(__dirname, "data");
 // La app de macOS pasa ORQ_DATA_DIR para guardar los datos fuera del bundle
@@ -334,17 +335,15 @@ function startSession(cwd, kind, cols, rows) {
     env.DISPATCH_SETTINGS = hookSettings();
     env.DISPATCH_SESSION = id;
     env.DISPATCH_RC_NAME = path.basename(cwd);
-    const remote = config.claude_remote_control !== false;
-    const rc = remote ? ' --remote-control "$DISPATCH_RC_NAME"' : "";
     // Mantiene al Mac despierto mientras se ejecuta Claude con remote control,
     // evitando el reposo por inactividad, disco o sistema.
     // Solo se activa cuando se usa el control remoto (remote control).
     // Al salir de Claude, el proceso se detiene y se libera el mantenimiento.
     // No previene el reposo al cerrar la tapa si no hay monitor externo.
-    const awake = remote ? "/usr/bin/caffeinate -ims " : "";
+    const remote = config.claude_remote_control !== false;
     args.push(
       "-c",
-      `${awake}claude --append-system-prompt "$DISPATCH_INSTRUCTIONS" --settings "$DISPATCH_SETTINGS"${rc}; ` +
+      `${sessionlib.sessionCommand(sessionlib.cliOf(config), { remote })}; ` +
         'unset DISPATCH_INSTRUCTIONS DISPATCH_SETTINGS DISPATCH_SESSION DISPATCH_RC_NAME; exec "$SHELL" -l -i'
     );
   }
@@ -801,7 +800,10 @@ function sessionSkills() {
 
 function buildInstructions(project) {
   const port = config.app_port || 3131;
-  const enabled = getAgents().filter((a) => a.enabled !== false);
+  const cli = sessionlib.cliOf(config);
+  const mode = sessionlib.modeOf(config);
+  const local = mode === "local";
+  const enabled = local ? getAgents().filter((a) => a.enabled !== false) : [];
   const has = (id) => enabled.some((a) => a.id === id);
   const list = enabled
     .map((a) => `- ${a.id} (${a.name}): ${a.use_when}${a.model && a.model !== config.model ? ` [modelo: ${a.model}]` : ""}`)
@@ -874,7 +876,7 @@ algo importante, entonces sí lo añades: es una línea, no un archivo comentado
     : "";
 
   const skills = sessionSkills();
-  const skillsNote = skills.length
+  const skillsNote = skills.length && cli === "claude"
     ? `Al empezar la sesión, antes de responder nada, carga con la herramienta Skill:
 ${skills.map((s) => `- ${s}`).join("\n")}
 Aplícalas durante toda la sesión, salvo que te pida apagarlas.
@@ -888,11 +890,56 @@ Cuando registres un plan usa "project": "${project}".
 ${skillsNote}`
     : "";
 
-  return `# Flujo con agentes de IA locales
+  const intro = local
+    ? `# Flujo con agentes de IA locales
 
 Eres el orquestador: tú lees mis archivos y tocas mi código. Tienes agentes locales
 en LM Studio a tu disposición para lo que necesites. Son modelos pequeños: no leen
-archivos ni recuerdan nada, todo el contexto se lo pasas tú en el prompt.
+archivos ni recuerdan nada, todo el contexto se lo pasas tú en el prompt.`
+    : `# Flujo con Singularity
+
+Tú lees mis archivos y tocas mi código. Mi panel Singularity enseña tu plan en un
+tablero: lo mantienes al día con curl para que yo vea en qué estás.`;
+
+  const soloBody = `${mode === "subagents" ? sessionlib.subagentsSection(port) : "\n## Sin agentes\nHaces tú todos los pasos: no hay agentes locales ni subagentes. Los comentarios\ny la documentación también los escribes tú.\n"}
+## Ciclo de trabajo
+
+${sessionlib.planStep(cli)}
+
+2) REGISTRO — Cuando apruebe, registra el plan en mi panel:
+   curl -s -X POST http://localhost:${port}/api/plan \\
+     -H "Content-Type: application/json" \\
+     -d '{"title":"...","goal":"...","project":"<ruta absoluta del repo>","steps":[
+           {"description":"Leer X","agent":null}${mode === "subagents" ? `,
+           {"description":"Generar Y","agent":"subagente"}` : ""}
+         ]}'
+   ("agent": null = lo haces tú; "project" = la carpeta donde trabajas)
+
+   El tablero tiene cinco columnas: todo, progress, review, done, errors.
+   Los pasos entran en todo. A done lo muevo yo desde el panel.
+
+3) EJECUCIÓN — Al empezar un paso pásalo a progress y al acabarlo a done:
+     curl -s -X POST http://localhost:${port}/api/plan/step/step-1 \\
+       -H "Content-Type: application/json" -d '{"column":"progress"}'
+     curl -s -X POST http://localhost:${port}/api/plan/step/step-1 \\
+       -H "Content-Type: application/json" -d '{"status":"done"}'
+   (también acepta {"column":"review"} si quieres dejarlo para que yo lo mire)
+
+4) REVISIÓN — Repasa tu propio diff antes de darme la tarea por terminada.
+   Al terminar, repórtame qué cambió y qué dudas tienes, y propón un plan de
+   commits agrupado por tema; déjamelo también en el panel:
+     curl -s -X POST http://localhost:${port}/api/git/plan \\
+       -H "Content-Type: application/json" \\
+       -d '{"path":"<ruta del repo>","text":"<los bloques>"}'
+   Cada bloque: "COMMIT: <título>", "ARCHIVOS:" con una ruta por línea,
+   "MENSAJE:" con el mensaje y "FIN". No commitees nada: los commits los ejecuto yo.
+   Cierra con: curl -s -X DELETE http://localhost:${port}/api/plan
+
+${sessionlib.cardsSection(cli, port, project)}`;
+
+  if (!local) return `${intro}\n${sessionNote}${soloBody}`;
+
+  return `${intro}
 ${sessionNote}
 ## Agentes disponibles
 ${list}
@@ -925,9 +972,7 @@ auth o credenciales (sí puedes pedir revisión).
 
 ## Ciclo de trabajo
 
-1) PLAN — Para tareas de más de un paso, entra en plan mode, lee lo necesario y
-   arma el plan indicando qué paso hace cada quien. Preséntamelo y espera mi
-   aprobación.
+${sessionlib.planStep(cli)}
 
 2) REGISTRO — Cuando apruebe, registra el plan en mi panel:
    curl -s -X POST http://localhost:${port}/api/plan \\
@@ -969,18 +1014,7 @@ auth o credenciales (sí puedes pedir revisión).
    agente.${closingNote} Al terminar, repórtame qué cambió y qué dudas tienes.
    Cierra con: curl -s -X DELETE http://localhost:${port}/api/plan
 
-## Tarjetas del tablero y notas
-Las tarjetas que escribo o muevo yo en el tablero son encargos para ti. Te llegan
-solas al terminar tu turno, o escritas en la sesión si estás parado, con su id:
-- En curso (progress): hazlas en cuanto termines lo que estabas haciendo.
-- Por hacer (todo): propónmelas y pregúntame antes de empezar.
-- Revisión (review): revisa lo que se hizo para esa tarea y repórtame.
-- Errores (errors): algo falla; investiga y arréglalo.
-- Hecho (done): nada, es mi registro.
-Muévelas tú con POST /api/plan/step/<id> {"column":"..."} mientras las trabajas.
-Cerrar el plan no las borra: siguen en el tablero hasta que las paso a hecho.
-Al cerrar un plan te enseñaré mis notas pendientes del proyecto; pregúntame si
-sigo con alguna y no empieces ninguna sin mi respuesta.
+${sessionlib.cardsSection(cli, port, project)}
 
 ## Reglas
 - Al empezar cada tarea, consulta los agentes activos y el estado:
@@ -1007,7 +1041,7 @@ app.get("/api/manifest", (req, res) => {
       "Agentes de IA locales disponibles para delegación. Elige el agente cuyo 'use_when' corresponda a la tarea y llama a POST /agent/{id} con {\"prompt\": \"...\"}.",
     base_url: `http://localhost:${config.app_port}`,
     agents: getAgents()
-      .filter((a) => a.enabled !== false)
+      .filter((a) => a.enabled !== false && sessionlib.modeOf(config) === "local")
       .map((a) => ({
         id: a.id,
         name: a.name,

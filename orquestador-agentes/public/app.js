@@ -278,6 +278,8 @@ function openNewCard(col, column) {
   input.addEventListener("blur", save);
 }
 
+const CLI_NAMES = { claude: "Claude Code", gemini: "Gemini CLI", codex: "Codex CLI" };
+
 function renderStepCard(step) {
   const agent = agents.find((a) => a.id === step.agent);
   const column = columnOf(step);
@@ -287,7 +289,7 @@ function renderStepCard(step) {
 
   const who = step.agent
     ? `<span class="who">${agent?.emoji || "🤖"} ${escapeHtml(agent?.name || step.agent)}</span>`
-    : `<span class="who ${step.manual ? "mine" : "claude"}">${step.manual ? "✎ Tuya" : "◈ Claude Code"}</span>`;
+    : `<span class="who ${step.manual ? "mine" : "claude"}">${step.manual ? "✎ Tuya" : `◈ ${CLI_NAMES[config.session_cli] || "Claude Code"}`}</span>`;
 
   const meta = [];
   if (column === "progress") meta.push(step.agent ? "escribiendo…" : "en curso");
@@ -1263,8 +1265,12 @@ function formatWeekReset(iso) {
   return `${day} ${formatClock(iso)}`;
 }
 
+// Solo se muestra con Claude en la sesión: los datos salen de sus transcripts, y con
+// Gemini o Codex las barras no medirían nada de lo que se está usando.
 function renderClaudeUsage() {
   const card = $("#usageCard");
+  card.hidden = (config.session_cli || "claude") !== "claude";
+  if (card.hidden) return;
   if (!claudeUsage || !claudeUsage.available) {
     card.innerHTML = `
       <div class="row baseline between">
@@ -2549,6 +2555,8 @@ async function loadConfig() {
   $("#cfgRemoteControl").checked = config.claude_remote_control !== false;
   $("#cfgCardPrompts").checked = config.claude_card_prompts !== false;
   $("#cfgSessionSkills").value = (config.claude_session_skills ?? DEFAULT_SESSION_SKILLS).join(", ");
+  $("#cfgSessionCli").value = config.session_cli || "claude";
+  $("#cfgMode").value = config.orchestration_mode || "local";
   selectedParallel = config.max_parallel || 1;
   $("#infoPort").textContent = `:${config.app_port || 3131}`;
   renderParallel();
@@ -2568,9 +2576,12 @@ $("#saveConfigBtn").addEventListener("click", async () => {
       claude_remote_control: $("#cfgRemoteControl").checked,
       claude_card_prompts: $("#cfgCardPrompts").checked,
       claude_session_skills: $("#cfgSessionSkills").value.split(",").map((s) => s.trim()).filter(Boolean),
+      session_cli: $("#cfgSessionCli").value,
+      orchestration_mode: $("#cfgMode").value,
     }),
   });
   await loadConfig();
+  renderPlan();
   renderClaudeUsage();
   flash("#configSaved", "Guardado ✓");
   refreshStatus();
