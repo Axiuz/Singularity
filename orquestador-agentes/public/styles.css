@@ -1338,7 +1338,13 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--ghost); c
   border-bottom: 1px solid var(--border-soft); scrollbar-width: none;
 }
 .ed-tabs::-webkit-scrollbar { display: none; }
-.ed-tabs:empty { display: none; }
+.ed-tabbar { display: flex; flex: none; border-bottom: 1px solid var(--border-soft); }
+.ed-tabbar:has(.ed-tabs:empty) { display: none; }
+.ed-tabbar .ed-tabs { flex: 1; min-width: 0; border-bottom: 0; }
+.ed-tab-acts { display: flex; align-items: center; gap: 1px; padding: 0 6px; flex: none; }
+.ed-tab-acts:empty { display: none; }
+.ed-tab-acts .ed-view-act.go { color: var(--green); }
+.ed-tab-acts .ed-view-act.halt { color: var(--red); }
 .ed-tab {
   display: flex; align-items: center; gap: 7px; padding: 7px 9px 7px 11px; cursor: pointer;
   background: var(--bg); border: 0; border-right: 1px solid var(--border-soft);

@@ -2219,6 +2219,24 @@ const CodeEditor = (() => {
     host.querySelector("[data-debug-file]")?.addEventListener("click", () => startRun(true));
     host.querySelector("[data-stop-run]")?.addEventListener("click", () => stopRun());
     host.querySelector("[data-diag]")?.addEventListener("click", () => runDiag());
+    renderTabActs(runPlan);
+  }
+
+  // Botones de ejecutar, depurar y parar a la derecha de la barra de pestañas, como
+  // el ▷ de VS Code. Solo salen si no falta nada en el Mac para ese archivo, y se
+  // repintan desde renderStatus, que es donde ya se recalculan el plan y el estado.
+  function renderTabActs(runPlan) {
+    const host = $("#edTabActs");
+    const act = (attr, icon, title, cls = "") => `<button class="ed-view-act ${cls}" ${attr} title="${escapeAttr(title)}">${EdIcons.view(icon)}</button>`;
+    host.innerHTML = dbgActive()
+      ? act("data-stop-run", "stop", "Parar  ⇧F5", "halt")
+      : runPlan && !runPlan.missing.length
+      ? act("data-run-file", "run", `Ejecutar ${runPlan.label}  ⌃F5`, "go") +
+        (runPlan.debug && !runPlan.debug.missing.length ? act("data-debug-file", "debug", "Depurar  F5") : "")
+      : "";
+    host.querySelector("[data-run-file]")?.addEventListener("click", () => startRun(false));
+    host.querySelector("[data-debug-file]")?.addEventListener("click", () => startRun(true));
+    host.querySelector("[data-stop-run]")?.addEventListener("click", () => stopRun());
   }
 
   // El menú rápido de la barra: las ramas recientes y la vista entera. Usa el
