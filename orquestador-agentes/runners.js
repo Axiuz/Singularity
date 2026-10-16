@@ -1,7 +1,8 @@
 // Catálogo de cómo compilar, ejecutar y depurar un archivo suelto según su
 // extensión. Sin estado: planFor() no ejecuta nada, solo dice qué se lanzaría.
 // Depurar usa el Debug Adapter Protocol: lldb-dap para C, C++, Swift y Rust,
-// debugpy para Python. JS/TS, Java, Kotlin y Go de momento solo se ejecutan.
+// debugpy para Python y jsdap.js (propio, sobre el inspector de Node) para JS/TS.
+// Java, Kotlin y Go de momento solo se ejecutan.
 // El servidor no hereda el PATH del shell de login: los binarios se buscan en
 // las rutas habituales y, en macOS, con xcrun -f, que es donde vive lldb-dap.
 
@@ -26,8 +27,8 @@ const LANGS = [
   { id: "swift", label: "Swift", exts: [".swift"], build: (f, out) => ["swiftc", ["-g", "-Onone", f, "-o", out]], run: (f, out) => [out, []], debug: "lldb" },
   { id: "rust", label: "Rust", exts: [".rs"], build: (f, out) => ["rustc", ["-g", f, "-o", out]], run: (f, out) => [out, []], debug: "lldb" },
   { id: "python", label: "Python", exts: [".py"], run: (f) => ["python3", ["-u", f]], debug: "debugpy" },
-  { id: "javascript", label: "JavaScript", exts: [".js", ".mjs", ".cjs"], run: (f) => ["node", [f]] },
-  { id: "typescript", label: "TypeScript", exts: [".ts", ".mts", ".cts"], run: (f) => ["node", [f]] },
+  { id: "javascript", label: "JavaScript", exts: [".js", ".mjs", ".cjs"], run: (f) => ["node", [f]], debug: "node" },
+  { id: "typescript", label: "TypeScript", exts: [".ts", ".mts", ".cts"], run: (f) => ["node", [f]], debug: "node" },
   { id: "java", label: "Java", exts: [".java"], run: (f) => ["java", [f]] },
   {
     id: "kotlin",
@@ -47,6 +48,11 @@ const ADAPTERS = {
     bin: "lldb-dap",
     args: [],
     launch: ({ out, cwd }) => ({ program: out, cwd, args: [], stopOnEntry: false }),
+  },
+  node: {
+    bin: "node",
+    args: [path.join(__dirname, "jsdap.js")],
+    launch: ({ file, cwd }) => ({ program: file, cwd }),
   },
   debugpy: {
     bin: "python3",

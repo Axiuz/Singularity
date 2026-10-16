@@ -42,11 +42,14 @@ test("Python sin debugpy dice qué falta y cómo instalarlo", () => {
   assert.equal(withIt.debug.launch.program, "/p/a.py");
 });
 
-test("JS se ejecuta sin compilar y sin depurador", () => {
+test("JS se ejecuta sin compilar y se depura con jsdap.js", () => {
   const plan = planFor("/p/a.js", { find, outDir });
   assert.deepEqual(plan.steps, []);
   assert.equal(plan.run.cmd, "/n/node");
-  assert.equal(plan.debug, null);
+  assert.equal(plan.debug.adapter, "node");
+  assert.equal(plan.debug.cmd, "/n/node");
+  assert.match(plan.debug.args[0], /jsdap\.js$/);
+  assert.deepEqual(plan.debug.launch, { program: "/p/a.js", cwd: "/p" });
 });
 
 test("un compilador ausente aparece en missing", () => {
