@@ -832,7 +832,13 @@ final class BrowserHost: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloa
 
   func remove(_ id: String) {
     observers[id] = nil
+    // Quita los delegados para evitar notificaciones sobre la pestaña cerrada
+    tabs[id]?.navigationDelegate = nil
+    tabs[id]?.uiDelegate = nil
     tabs[id]?.stopLoading()
+    // Carga una página vacía para detener el audio y vídeo en el WKWebView: retirarlo no basta,
+    // la vista puede seguir viva un rato y su página seguía sonando.
+    tabs[id]?.loadHTMLString("", baseURL: nil)
     tabs[id]?.removeFromSuperview()
     tabs[id] = nil
     if active == id { active = nil }
