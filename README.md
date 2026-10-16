@@ -467,7 +467,7 @@ solo sin moverte el cursor; si lo tenías a medio editar, te avisa y no lo pisa.
 
 Desde el editor, puedes ejecutar y depurar el archivo que tienes abierto:
 
-- Haz clic en **▶ ejecutar** o **depurar** en la barra de estado (abajo). Mientras el programa corre, verás un botón con su estado (ej. `■ hola.c · en pausa`) que lo para.
+- Haz clic en **▶** o en el icono de depurar a la derecha de la barra de pestañas, como en VS Code, o en **▶ ejecutar** / **depurar** de la barra de estado (abajo). Mientras el programa corre, verás un botón con su estado (ej. `■ hola.c · en pausa`) que lo para.
 - Abre la vista **Ejecutar y depurar** con **⇧⌘D**. Allí encontrarás botones para continuar, pausar, paso por encima, entrar, salir, reiniciar y parar.
 - Las secciones **Variables**, **Pila de llamadas** y **Breakpoints** te enseñan el estado del programa cuando se para.
 - Los breakpoints se ponen haciendo clic en el margen izquierdo del editor o con **F9**. Se recuerdan entre sesiones y, si ya hay una depuración en marcha, se aplican al momento.
@@ -479,7 +479,7 @@ Desde el editor, puedes ejecutar y depurar el archivo que tienes abierto:
 |---|---|---|
 | C, C++, Swift, Rust | ✅ | ✅ (con lldb-dap, viene con las Command Line Tools de Xcode) |
 | Python | ✅ | ✅ (requiere `python3 -m pip install --user debugpy`) |
-| JavaScript, TypeScript | ✅ (node) | todavía no |
+| JavaScript, TypeScript | ✅ (node) | ✅ (adaptador propio sobre el inspector de Node; requiere Node 22+, y TypeScript, Node 22.18+ o 23.6+) |
 | Java, Kotlin | ✅ | todavía no |
 | Go, Ruby, PHP, Shell | ✅ | — |
 
@@ -747,6 +747,7 @@ orquestador-agentes/          raíz del repo
     gradle.js                 compila con ./gradlew y localiza el APK que sale
     runners.js                cómo compilar, ejecutar y depurar un archivo según su extensión
     dap.js                    cliente del Debug Adapter Protocol: la ejecución en marcha
+    jsdap.js                  adaptador DAP propio para JS y TS sobre el inspector de Node
     session.js                CLI y modo de trabajo de la pestaña Sesión: comando y partes de las instrucciones
     claudeusage.js            tokens que gasta Claude Code, leídos de sus transcripts
     safepath.js               contención de rutas del editor
