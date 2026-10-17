@@ -51,14 +51,15 @@ Claude Code ──curl──▶ Orquestador :3131 ──API OpenAI──▶ LM S
 
 1. Instala [Claude Code](https://claude.com/claude-code), de forma que `claude` quede en el PATH
    (o Antigravity CLI o Codex CLI, que se eligen en Configuración).
-2. Descarga el último `Singularity-x.y.z.dmg` de
-   [Releases](https://github.com/Axiuz/Singularity/releases/latest) y arrástralo a Aplicaciones.
-   La firma es ad-hoc y no está notarizada: la primera vez, ábrelo con clic derecho > Abrir.
-3. Solo para agentes locales: instala [LM Studio](https://lmstudio.ai), descarga un modelo de ~4B
-   (probado con Qwen3 4B y Gemma 3 4B), activa su CLI `lms` en *Settings > Developer* y usa la
-   edición **Singularity Local** (`Singularity-Local-x.y.z.dmg`). Ver [Ediciones y actualizaciones](#ediciones-y-actualizaciones).
+2. Descarga de [Releases](https://github.com/Axiuz/Singularity/releases) la edición que quieras y
+   arrástrala a Aplicaciones: **Singularity** (`Singularity-x.y.z.dmg`, con agentes locales) o
+   **Singularity AI Subscription** (`Singularity-AI-Subscription-x.y.z.dmg`, solo IA de pago).
+   La firma es ad-hoc y no está notarizada: la primera vez, ábrela con clic derecho > Abrir.
+3. Solo para **Singularity**: instala [LM Studio](https://lmstudio.ai), descarga un modelo de ~4B
+   (probado con Qwen3 4B y Gemma 3 4B) y activa su CLI `lms` en *Settings > Developer*.
+   Ver [Ediciones y actualizaciones](#ediciones-y-actualizaciones).
 
-Al abrirse, la app arranca el orquestador; la edición Local además levanta LM Studio y carga el
+Al abrirse, la app arranca el orquestador; **Singularity** además levanta LM Studio y carga el
 modelo. Al cerrarla los detiene y deja la RAM libre. Los datos se guardan en `~/Library/Application Support/Singularity`
 (sobreviven a reinstalar) y los logs en `~/Library/Logs/Singularity/`.
 
@@ -82,20 +83,20 @@ URL en la pestaña Conexión. El mock entiende dos palabras clave dentro del pro
 | `FORZAR_RAZONAMIENTO` | manda `reasoning_content` antes de la respuesta |
 
 Para generar tu propio DMG: `bash Scripts/build-dmg.sh` (deja `dist/Singularity-<versión>.dmg`),
-o `EDITION=local bash Scripts/build-dmg.sh` para la edición Local.
+o `EDITION=cloud bash Scripts/build-dmg.sh` para Singularity AI Subscription.
 
 ## Ediciones y actualizaciones
 
-| | Singularity | Singularity Local |
+| | Singularity | Singularity AI Subscription |
 |---|---|---|
-| Release | `vX.Y.Z` | `local-vX.Y.Z` |
-| DMG | `Singularity-X.Y.Z.dmg` | `Singularity-Local-X.Y.Z.dmg` |
-| LM Studio | No lo necesita ni lo arranca | Obligatorio, con la CLI `lms` activada |
-| Modo por defecto | Solo IA de pago, sin agentes | Agentes locales de LM Studio |
-| Compilar | `bash Scripts/build-dmg.sh` | `EDITION=local bash Scripts/build-dmg.sh` |
+| Release | `vX.Y.Z` | `ai-vX.Y.Z` |
+| DMG | `Singularity-X.Y.Z.dmg` | `Singularity-AI-Subscription-X.Y.Z.dmg` |
+| LM Studio | Obligatorio, con la CLI `lms` activada | No lo necesita ni lo arranca |
+| Modo por defecto | Agentes locales de LM Studio | Solo IA de pago, sin agentes |
+| Compilar | `bash Scripts/build-dmg.sh` | `EDITION=cloud bash Scripts/build-dmg.sh` |
 
 El modo por defecto solo cuenta en una instalación nueva: si ya usabas Singularity, conservas tu
-`config.json` y tu modo. En la edición sin LM Studio puedes elegir igualmente el modo local en
+`config.json` y tu modo. En Singularity AI Subscription puedes elegir igualmente el modo local en
 Configuración: si tienes `lms`, la app lo arranca. Las dos ediciones comparten datos (`~/Library/Application Support/Singularity`)
 y el puerto del panel, así que no se abren a la vez.
 
@@ -108,7 +109,7 @@ existiera el actualizador no lo traen: la primera con él hay que instalarla a m
 ## Versiones
 
 Cada push a `main` que pasa los tests publica dos releases con la misma versión: `v2.1.N`
-(Singularity) y `local-v2.1.N` (Singularity Local).
+(Singularity) y `ai-v2.1.N` (Singularity AI Subscription).
 Para pasar a 2.2.x se sube el minor a mano en `orquestador-agentes/package.json`.
 Los cambios que solo tocan documentación no sacan release.
 
