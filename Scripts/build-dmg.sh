@@ -1,6 +1,7 @@
 #!/bin/bash
 # Genera dist/Singularity-<versión>.dmg con herramientas que ya trae macOS.
-# Uso: bash Scripts/build-dmg.sh
+# Uso: bash Scripts/build-dmg.sh                (edición sin LM Studio)
+#      EDITION=local bash Scripts/build-dmg.sh  (Singularity Local, con LM Studio)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -8,16 +9,22 @@ SRC="$ROOT/orquestador-agentes"
 DIST="$ROOT/dist"
 # Se compila aparte y se cambia al final: un rebuild lanzado desde el propio
 # panel borraría la app que lo está ejecutando si trabajáramos sobre dist.
-WORK="$DIST/.next"
-APP="$WORK/Singularity.app"
-FINAL="$DIST/Singularity.app"
+EDITION="${EDITION:-cloud}"
+case "$EDITION" in
+  cloud) NAME="Singularity" DMG_PREFIX="Singularity" ;;
+  local) NAME="Singularity Local" DMG_PREFIX="Singularity-Local" ;;
+  *) echo "EDITION tiene que ser cloud o local" >&2; exit 1 ;;
+esac
+WORK="$DIST/.next-$EDITION"
+APP="$WORK/$NAME.app"
+FINAL="$DIST/$NAME.app"
 VERSION="${VERSION:-$(node -p "require('$SRC/package.json').version")}"
-DMG="$DIST/Singularity-$VERSION.dmg"
+DMG="$DIST/$DMG_PREFIX-$VERSION.dmg"
 
 # Restos de un build anterior que se cortó a medias: sin esto el .anterior de
 # aquella vez se queda ocupando el disco y confunde sobre cuál app es la buena.
-echo "→ Compilando Singularity.app $VERSION"
-rm -rf "$WORK" "$DIST/Singularity.app.anterior"
+echo "→ Compilando $NAME.app $VERSION"
+rm -rf "$WORK" "$FINAL.anterior"
 mkdir -p "$WORK"
 RES="$APP/Contents/Resources"
 mkdir -p "$APP/Contents/MacOS" "$RES"
@@ -48,8 +55,9 @@ cat >"$APP/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleExecutable</key><string>Singularity</string>
   <key>CFBundleIdentifier</key><string>com.axiuz.singularity</string>
-  <key>CFBundleName</key><string>Singularity</string>
-  <key>CFBundleDisplayName</key><string>Singularity</string>
+  <key>CFBundleName</key><string>$NAME</string>
+  <key>CFBundleDisplayName</key><string>$NAME</string>
+  <key>SingularityEdition</key><string>$EDITION</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
@@ -66,6 +74,9 @@ cat >"$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 install -m 755 "$ROOT/macos/launcher.sh" "$RES/launcher.sh"
+install -m 755 "$ROOT/macos/updater.sh" "$RES/updater.sh"
+printf '%s\n' "$EDITION" >"$RES/edition"
+printf '%s\n' "$VERSION" >"$RES/version"
 
 echo "→ Copiando el servidor y sus dependencias"
 mkdir -p "$RES/app"
@@ -87,6 +98,15 @@ fi
 # Solo los valores por defecto: projects.json lleva rutas reales y no viaja en la app
 mkdir -p "$RES/app/data"
 cp "$SRC/data/agents.json" "$SRC/data/config.json" "$SRC/data/tools.json" "$RES/app/data/"
+if [ "$EDITION" = "cloud" ]; then
+  node -e '
+    const fs = require("fs");
+    const file = process.argv[1];
+    const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
+    cfg.orchestration_mode = "solo";
+    fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
+  ' "$RES/app/data/config.json"
+fi
 # La misma red que la de los módulos, para los datos: un archivo de data que el
 # servidor espera y que no viajó en el bundle sale como un crash al arrancar la
 # app, no como un build en rojo. Aquí se ve antes.
@@ -121,13 +141,13 @@ STAGE="$WORK/dmg"
 mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
-hdiutil create -quiet -volname "Singularity" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+hdiutil create -quiet -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 rm -rf "$STAGE"
 
 # El cambio va al final y en dos pasos: la app vieja se aparta y solo se borra
 # cuando la nueva ya está en su sitio, así que un fallo aquí no deja a nadie sin app.
 echo "→ Instalando la app nueva en dist"
-VIEJA="$DIST/Singularity.app.anterior"
+VIEJA="$FINAL.anterior"
 rm -rf "$VIEJA"
 if [ -d "$FINAL" ]; then mv "$FINAL" "$VIEJA"; fi
 mv "$APP" "$FINAL"
@@ -135,7 +155,7 @@ rm -rf "$VIEJA" "$WORK"
 
 # Solo queda la app nueva y su .dmg: los de versiones anteriores pesan 65 MB cada
 # uno y no hay forma de saber desde fuera cuál corresponde a la app instalada.
-find "$DIST" -maxdepth 1 -name 'Singularity-*.dmg' ! -name "$(basename "$DMG")" -exec rm -f {} +
+find "$DIST" -maxdepth 1 -name "$DMG_PREFIX-[0-9]*.dmg" ! -name "$(basename "$DMG")" -exec rm -f {} +
 
 echo "✓ $DMG"
 echo "✓ $FINAL"

@@ -60,9 +60,16 @@ jobs:
           echo "Versión: $next"
 
       # VERSION sobreescribe la versión de package.json solo para este build; sin certificado el script firma ad-hoc.
-      - name: Compilar DMG
+      - name: Compilar DMG sin LM Studio
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          EDITION: cloud
+        run: bash Scripts/build-dmg.sh
+
+      - name: Compilar DMG Local
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          EDITION: local
         run: bash Scripts/build-dmg.sh
 
       - name: Publicar release
@@ -73,4 +80,10 @@ jobs:
           gh release create "v$VERSION" "dist/Singularity-$VERSION.dmg" \
             --title "Singularity $VERSION" \
             --target "$GITHUB_SHA" \
-            --generate-notes
+            --generate-notes \
+            --latest
+          gh release create "local-v$VERSION" "dist/Singularity-Local-$VERSION.dmg" \
+            --title "Singularity Local $VERSION" \
+            --target "$GITHUB_SHA" \
+            --notes "Edición con agentes locales de LM Studio. Requiere LM Studio con su CLI lms activada." \
+            --latest=false
