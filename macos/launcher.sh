@@ -1,7 +1,7 @@
 #!/bin/bash
 # Lanzador de Singularity.app. Lo invoca la app nativa (Singularity.swift):
-#   launcher.sh start   arranca LM Studio y el orquestador; imprime la URL del panel
-#   launcher.sh stop    detiene el orquestador y el servidor de LM Studio
+#   launcher.sh start   arranca el orquestador (y LM Studio si toca); imprime la URL del panel
+#   launcher.sh stop    detiene el orquestador y, si lo arrancó, el servidor de LM Studio
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -14,6 +14,7 @@ LOG_DIR="$HOME/Library/Logs/Singularity"
 OLD_DATA_DIRS=("$HOME/Library/Application Support/Dispatch" "$HOME/Library/Application Support/Claude Dispatch")
 OLD_LOG_DIRS=("$HOME/Library/Logs/Dispatch" "$HOME/Library/Logs/Claude Dispatch")
 PID_FILE="$DATA_DIR/orquestador.pid"
+EDITION="$(cat "$HERE/edition" 2>/dev/null || echo local)"
 
 # Las apps abiertas desde Finder no heredan el PATH de la terminal
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.lmstudio/bin:$PATH"
@@ -54,6 +55,22 @@ models_to_load() {
     const models = list.filter((a) => a.enabled !== false).map((a) => a.model);
     console.log([...new Set([cfg.model, ...models].filter(Boolean))].join("\n"));
   ' "$cfg" "$agents" 2>/dev/null || config_value model
+}
+
+# El modo de config.json, o local si no hay ninguno. La edición sin LM Studio trae "solo"
+# escrito en su config de fábrica, así que solo afecta a instalaciones nuevas: quien
+# actualiza conserva su config y con ella su modo.
+orchestration_mode() {
+  local mode
+  mode="$(config_value orchestration_mode)"
+  echo "${mode:-local}"
+}
+
+# Devuelve verdadero si la edición es local o si el modo de orchestración es local y LM Studio está instalado.
+# En cloud, solo se requiere si el usuario eligió modo local y tiene lms instalado, evitando fallos.
+wants_lmstudio() {
+  [ "$EDITION" = "local" ] && return 0
+  [ "$(orchestration_mode)" = "local" ] && command -v lms >/dev/null
 }
 
 panel_url() {
@@ -111,7 +128,7 @@ start_orquestador() {
   command -v node >/dev/null || fail "No encuentro Node.js. Instálalo desde nodejs.org o con Homebrew."
 
   cd "$APP_DIR" || fail "Falta la carpeta app dentro del bundle."
-  ORQ_DATA_DIR="$DATA_DIR" ORQ_APP_ONLY=1 nohup node server.js >>"$LOG_DIR/orquestador.log" 2>&1 &
+  ORQ_DATA_DIR="$DATA_DIR" ORQ_APP_ONLY=1 ORQ_EDITION="$EDITION" ORQ_VERSION="$(cat "$HERE/version" 2>/dev/null)" nohup node server.js >>"$LOG_DIR/orquestador.log" 2>&1 &
   echo $! >"$PID_FILE"
 
   for _ in $(seq 1 50); do
@@ -160,13 +177,13 @@ stop_lmstudio() {
 
 case "${1:-start}" in
   start)
-    start_lmstudio
+    if wants_lmstudio; then start_lmstudio; fi
     start_orquestador
     panel_url
     ;;
   stop)
     stop_orquestador
-    stop_lmstudio
+    if wants_lmstudio; then stop_lmstudio; fi
     ;;
   *) fail "Uso: launcher.sh start|stop" ;;
 esac
