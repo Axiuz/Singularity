@@ -26,6 +26,7 @@ const trackers = require("./trackers");
 const runners = require("./runners");
 const daplib = require("./dap");
 const sessionlib = require("./session");
+const updatelib = require("./update");
 
 const DEFAULT_DATA_DIR = path.join(__dirname, "data");
 // La app de macOS pasa ORQ_DATA_DIR para guardar los datos fuera del bundle
@@ -3100,6 +3101,16 @@ app.get("/api/browser/blocklist", async (req, res) => {
     res.json(req.query.rules ? { ...meta, rules: JSON.stringify(list.rules) } : meta);
   } catch (err) {
     res.status(502).json({ error: `No se pudo bajar la lista de rastreadores: ${err.message}` });
+  }
+});
+
+// ---- Actualizaciones ----
+const checkUpdate = updatelib.createChecker({ edition: process.env.ORQ_EDITION, current: process.env.ORQ_VERSION });
+app.get("/api/update", async (req, res) => {
+  try {
+    res.json(await checkUpdate());
+  } catch (err) {
+    res.status(502).json({ error: `No se pudo consultar GitHub: ${err.message}` });
   }
 });
 

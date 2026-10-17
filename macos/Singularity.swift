@@ -12,18 +12,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
   var webView: WKWebView!
   let browser = BrowserHost()
   let launcher = Bundle.main.path(forResource: "launcher", ofType: "sh")!
+  let edition = Bundle.main.object(forInfoDictionaryKey: "SingularityEdition") as? String
+  let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Singularity"
+  let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+  var panelURL: URL?
+  var updateTimer: Timer?
+  var skippedVersion: String?
+  var updating = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     buildMenu()
     buildWindow()
     browser.restoreSessionCookies()
-    showStatus("Arrancando LM Studio y el orquestador…")
+    showStatus(edition == "cloud" ? "Arrancando el orquestador…" : "Arrancando LM Studio y el orquestador…")
 
     DispatchQueue.global(qos: .userInitiated).async {
       let (ok, output) = self.runLauncher("start")
       DispatchQueue.main.async {
         if ok, let url = URL(string: output.trimmingCharacters(in: .whitespacesAndNewlines)) {
           self.webView.load(URLRequest(url: url))
+          self.panelURL = url
+          self.scheduleUpdateChecks()
         } else {
           self.fatal(output)
         }
@@ -131,12 +140,119 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
     NSApp.terminate(nil)
   }
 
+  // ---- Actualizaciones ----
+  // Determina si la copia instalada está en /Applications o en ~/Applications,
+  // evitando que builds de desarrollo en dist/ se actualicen con el DMG público.
+  var isInstalledCopy: Bool {
+    let parent = (Bundle.main.bundlePath as NSString).deletingLastPathComponent
+    return edition != nil && (parent == "/Applications" || parent == NSHomeDirectory() + "/Applications")
+  }
+
+  // Programa consultas de actualización: una tras 15 segundos y luego cada 6 horas,
+  // para evitar conflictos durante el arranque de la app y reducir carga en el servidor.
+  func scheduleUpdateChecks() {
+    guard isInstalledCopy else { return }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 15) { self.checkForUpdate(manual: false) }
+    updateTimer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
+      self?.checkForUpdate(manual: false)
+    }
+  }
+
+  // Se llama desde el menú "Buscar actualizaciones" para forzar una consulta inmediata,
+  // sin esperar el cronograma de revisión automática.
+  @objc func checkForUpdatesNow() { checkForUpdate(manual: true) }
+
+  // Consulta el servidor /api/update para verificar disponibilidad de actualizaciones,
+  // muestra alerta si hay nueva versión, y evita mostrarla si ya fue ignorada (skippedVersion).
+  func checkForUpdate(manual: Bool) {
+    guard !updating, let base = panelURL, let url = URL(string: "/api/update", relativeTo: base) else { return }
+    URLSession.shared.dataTask(with: url) { data, _, error in
+      let info = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+      DispatchQueue.main.async {
+        if info["available"] as? Bool == true, let latest = info["latest"] as? String,
+          let dmg = (info["url"] as? String).flatMap(URL.init(string:)) {
+          if manual || latest != self.skippedVersion { self.offerUpdate(latest, dmg) }
+        } else if manual {
+          let detail = (info["error"] as? String) ?? error?.localizedDescription
+          self.notice(detail == nil ? "\(self.appName) \(self.appVersion) es la versión más reciente." : "No se pudo buscar actualizaciones", detail ?? "")
+        }
+      }
+    }.resume()
+  }
+
+  // Muestra un cuadro de diálogo para ofrecer la actualización, con opciones de "Actualizar ahora" o "Más tarde",
+  // y guarda la versión ignorada solo en la sesión actual.
+  func offerUpdate(_ version: String, _ dmg: URL) {
+    let alert = NSAlert()
+    alert.messageText = "Hay una versión nueva de \(appName): \(version)"
+    alert.informativeText = "Tienes la \(appVersion). Se descarga, se instala y la app se reinicia. Guarda antes lo que tengas sin guardar en el editor."
+    alert.addButton(withTitle: "Actualizar ahora")
+    alert.addButton(withTitle: "Más tarde")
+    guard alert.runModal() == .alertFirstButtonReturn else {
+      skippedVersion = version
+      return
+    }
+    installUpdate(from: dmg)
+  }
+
+  // Descarga el DMG de actualización y lo guarda temporalmente,
+  // luego inicia el script updater.sh para instalarlo tras el cierre de la app.
+  func installUpdate(from dmg: URL) {
+    updating = true
+    URLSession.shared.downloadTask(with: dmg) { tmp, response, error in
+      let dest = FileManager.default.temporaryDirectory.appendingPathComponent("singularity-update.dmg")
+      var failure = error?.localizedDescription
+      if failure == nil, (response as? HTTPURLResponse)?.statusCode != 200 { failure = "GitHub no devolvió el DMG" }
+      if failure == nil, let tmp = tmp {
+        try? FileManager.default.removeItem(at: dest)
+        do { try FileManager.default.moveItem(at: tmp, to: dest) } catch { failure = error.localizedDescription }
+      }
+      DispatchQueue.main.async {
+        if let failure = failure {
+          self.updating = false
+          self.notice("No se pudo descargar la actualización", failure)
+        } else {
+          self.runUpdater(dmg: dest)
+        }
+      }
+    }.resume()
+  }
+
+  // Ejecuta el script updater.sh para instalar el DMG,
+  // y cierra la app para evitar conflictos al sustituir el bundle mientras corre.
+  func runUpdater(dmg: URL) {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/bash")
+    process.arguments = [
+      Bundle.main.path(forResource: "updater", ofType: "sh") ?? "",
+      String(ProcessInfo.processInfo.processIdentifier), dmg.path, Bundle.main.bundlePath,
+    ]
+    do {
+      try process.run()
+    } catch {
+      updating = false
+      notice("No se pudo instalar la actualización", error.localizedDescription)
+      return
+    }
+    NSApp.terminate(nil)
+  }
+
+  // Muestra una alerta informativa con título y texto,
+  // usada para notificar errores o estado de actualizaciones sin necesidad de código repetido.
+  func notice(_ title: String, _ text: String) {
+    let alert = NSAlert()
+    alert.messageText = title
+    alert.informativeText = text
+    alert.runModal()
+  }
+
   func buildMenu() {
     let main = NSMenu()
 
     let appItem = NSMenuItem()
     let appMenu = NSMenu()
     appMenu.addItem(withTitle: "Ocultar Singularity", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+    appMenu.addItem(withTitle: "Buscar actualizaciones…", action: #selector(checkForUpdatesNow), keyEquivalent: "")
     appMenu.addItem(.separator())
     appMenu.addItem(withTitle: "Salir de Singularity", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     appItem.submenu = appMenu
@@ -194,6 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
   func validateMenuItem(_ item: NSMenuItem) -> Bool {
     switch item.action {
     case #selector(browserNewTab): return browser.visible
+    case #selector(checkForUpdatesNow): return isInstalledCopy && panelURL != nil && !updating
     case #selector(browserCloseTab), #selector(browserFocusUrl), #selector(browserBack), #selector(browserForward):
       return browser.visible && browser.hasFocus(in: window)
     default: return true
