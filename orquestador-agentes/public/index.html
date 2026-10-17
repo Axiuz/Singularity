@@ -6,7 +6,8 @@
 <title>Singularity</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet" />
+<script src="theme.js"></script>
 <script src="veil.js"></script>
 <link rel="stylesheet" href="/vendor/xterm/xterm.css" />
 <link rel="stylesheet" href="styles.css" />
@@ -355,6 +356,25 @@
             </label>
             <div id="cfgVeilSliders" class="veil-sliders"></div>
             <div class="help"><span id="cfgVeilValue"></span>El desenfoque lo pone la ventana de macOS y cada slider decide cuánto la tapa una capa: a la izquierda se ve más el escritorio, y en 0% la capa desaparece. Fondo es el lienzo de la app, Paneles son las tarjetas y Código es el editor y las terminales. Se guarda en este Mac, no en config.json, y se aplica sin darle a Guardar.</div>
+          </div>
+          <div>
+            <label class="field-label">TEMA</label>
+            <div id="cfgThemePresets" class="theme-presets"></div>
+            <label class="field-label">COLORES</label>
+            <div id="cfgThemeColors" class="theme-colors"></div>
+            <button id="cfgThemeReset" class="btn">Restablecer colores del tema</button>
+            <label class="field-label">FUENTE DEL CÓDIGO</label>
+            <div class="theme-font">
+              <select id="cfgFontFamily" class="map-select" aria-label="Fuente"></select>
+              <label class="theme-num"><span>Tamaño</span><input id="cfgFontSize" type="number" min="10" max="24" step="0.5" class="mono" /></label>
+              <label class="theme-num"><span>Interlineado</span><input id="cfgLineHeight" type="number" min="1.2" max="2.2" step="0.05" class="mono" /></label>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="cfgLigatures" />
+              <span class="track"></span>
+              <span class="tlabel">LIGADURAS (=&gt;, !==, &lt;=)</span>
+            </label>
+            <div class="help">El tema pinta el panel, el editor, las terminales y el mapa. Los colores que cambies van encima del tema y se conservan si cambias de tema; Restablecer los quita. La fuente vale para el editor y las dos terminales. Se guarda en este Mac y se aplica sin darle a Guardar.</div>
           </div>
           <div class="info-box">
             <span class="field-label">ESTADO DEL SERVIDOR</span>

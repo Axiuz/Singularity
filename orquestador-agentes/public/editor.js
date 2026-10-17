@@ -500,10 +500,8 @@ const CodeEditor = (() => {
     defineTheme();
     editor = monaco.editor.create($("#edHost"), {
       automaticLayout: true,
-      fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-      fontSize: 13,
+      ...fontOptions(),
       fontWeight: "450",
-      lineHeight: 1.55,
       minimap: { enabled: true, renderCharacters: false },
       scrollBeyondLastLine: false,
       renderWhitespace: "selection",
@@ -534,8 +532,15 @@ const CodeEditor = (() => {
   let vsixTheme = null;
 
   // Reaplica el tema del editor, primero define el tema "dispatch" y luego aplica el tema de extensión si está activo
+  // Devuelve las opciones de fuente desde Theme para mantener consistencia entre editor y terminales; se actualizan con updateOptions para que Monaco reinterprete la fuente.
+  function fontOptions() {
+    const f = Theme.font();
+    return { fontFamily: f.stack, fontSize: f.size, lineHeight: f.lineHeight, fontLigatures: f.ligatures };
+  }
+
   function retheme() {
     if (!monaco) return;
+    if (editor) editor.updateOptions(fontOptions());
     defineTheme();
     if (vsixTheme) applyTheme(vsixTheme);
   }

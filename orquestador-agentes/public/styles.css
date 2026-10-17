@@ -939,6 +939,25 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--ghost); c
 }
 .veil-pct { flex: none; width: 34px; text-align: right; color: var(--faint); }
 
+.theme-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.theme-preset {
+  display: flex; flex-direction: column; gap: 6px; padding: 8px; cursor: pointer; text-align: left;
+  border-radius: 8px; border: 1px solid var(--border); font-size: 11.5px; font-family: inherit;
+}
+.theme-preset.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.theme-swatches { display: flex; gap: 3px; }
+.theme-swatches i { width: 14px; height: 14px; border-radius: 50%; display: block; }
+.theme-colors { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 12px; margin-bottom: 10px; }
+.theme-color { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-2); }
+.theme-color input[type="color"] {
+  width: 26px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 5px; background: none; cursor: pointer;
+}
+.theme-color.changed span::after { content: " •"; color: var(--accent); }
+.theme-font { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+#cfgThemeReset { margin-bottom: 14px; }
+.theme-num { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.theme-num input { width: 64px; }
+
 /* ---------- Consola y Conexión ---------- */
 .split { display: flex; gap: 16px; flex: 1; min-height: 0; }
 .split-side { width: 440px; flex: none; display: flex; flex-direction: column; gap: 14px; min-height: 0; }

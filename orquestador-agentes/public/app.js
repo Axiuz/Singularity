@@ -857,6 +857,9 @@ makeWidthDrag("#brResizer", "--br-side", { min: 160, max: 520, dir: 1 });
 // una shell pelada para comandos sueltos. Cada vista tiene su EventSource y su
 // cola de teclas, así que las dos pueden estar vivas a la vez.
 
+// Ajusta el tamaño de la terminal para que sea al menos 9pt y un poco más pequeño que el tamaño del font del editor, evitando que sea demasiado grande en comparación.
+const termFontSize = () => Math.max(9, Theme.font().size - 0.5);
+
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
@@ -920,7 +923,11 @@ function createTerminalView(hostSelector) {
     size: () => (term ? { cols: term.cols, rows: term.rows } : { cols: 100, rows: 30 }),
 
     retheme() {
-      if (term) term.options.theme = termTheme();
+      if (!term) return;
+      term.options.theme = termTheme();
+      term.options.fontFamily = Theme.font().stack;
+      term.options.fontSize = termFontSize();
+      view.fit();
     },
 
     focus() {
@@ -954,8 +961,8 @@ function createTerminalView(hostSelector) {
       renderSessionUI();
 
       term = new Terminal({
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-        fontSize: 12.5,
+        fontFamily: Theme.font().stack,
+        fontSize: termFontSize(),
         lineHeight: 1.15,
         cursorBlink: true,
         scrollback: 5000,
@@ -2511,6 +2518,13 @@ async function refreshStatus() {
       reach.textContent = data.warning ? "⚠ sin modelo" : "✓ responde";
       $("#infoModels").textContent = data.models?.length ? data.models.join(", ") : "ninguno cargado";
       refreshModelSelects();
+    } else if ((config.orchestration_mode || "local") !== "local") {
+      pill.className = "status-pill ok";
+      $("#statusDot").className = "dot ok";
+      $("#statusText").textContent = "IA de pago · sin agentes locales";
+      reach.className = "reach";
+      reach.textContent = "— sin LM Studio";
+      $("#infoModels").textContent = "—";
     } else {
       pill.className = "status-pill bad";
       $("#statusDot").className = "dot bad";
@@ -2635,13 +2649,76 @@ $("#cfgVeil").addEventListener("change", (e) => {
 
 // Escucha el evento de cambio de opacidad del fondo para re-aplicar el tema en las terminales y editor:
 // Monaco y xterm leen las variables una sola vez, al crearse
-document.addEventListener("veil:change", () => {
-  sessionTerm.retheme();
-  dockTerm.retheme();
-  if (window.CodeEditor && CodeEditor.retheme) CodeEditor.retheme();
-});
+["veil:change", "theme:change"].forEach((name) =>
+  document.addEventListener(name, () => {
+    sessionTerm.retheme();
+    dockTerm.retheme();
+    if (window.CodeEditor && CodeEditor.retheme) CodeEditor.retheme();
+  })
+);
 
 renderVeilControls();
+
+// Renderiza los controles de tema y font, mostrando los presets con sus colores visuales, los ajustes de color en tiempo real y los valores actuales del tema.
+function renderThemeControls() {
+  const st = Theme.state();
+  $("#cfgThemePresets").innerHTML = Object.entries(Theme.PRESETS)
+    .map(([id, p]) => {
+      const c = p.colors;
+      const dots = [c.bg, c.panel, c.accent, c["syn-keyword"], c["syn-string"], c["syn-function"]]
+        .map((v) => `<i style="background:${v}"></i>`)
+        .join("");
+      return `<button class="theme-preset${id === st.preset ? " on" : ""}" data-preset="${id}" style="background:${c.panel};color:${c.text}">
+        <span class="theme-swatches">${dots}</span>${escapeHtml(p.label)}</button>`;
+    })
+    .join("");
+  $("#cfgThemeColors").innerHTML = Theme.EDITABLE.map(
+    ([key, label]) => `<label class="theme-color${st.overrides[key] ? " changed" : ""}">
+      <input type="color" data-color="${key}" value="${Theme.color(key)}" /><span>${escapeHtml(label)}</span></label>`
+  ).join("");
+  $("#cfgThemeReset").disabled = !Object.keys(st.overrides).length;
+  $("#cfgFontFamily").innerHTML = Object.entries(Theme.FONTS)
+    .map(([id, f]) => `<option value="${id}"${id === st.font.family ? " selected" : ""}>${escapeHtml(f.label)}</option>`)
+    .join("");
+  $("#cfgFontSize").value = st.font.size;
+  $("#cfgLineHeight").value = st.font.lineHeight;
+  $("#cfgLigatures").checked = st.font.ligatures;
+}
+
+// Al hacer clic en un preset de tema, actualiza el estado del tema y vuelve a renderizar los controles con el nuevo tema aplicado.
+$("#cfgThemePresets").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-preset]");
+  if (!btn) return;
+  Theme.set({ preset: btn.dataset.preset });
+  renderThemeControls();
+});
+// Al cambiar el color en tiempo real, actualiza el estado del tema con el nuevo valor y marca el campo como modificado para mostrarlo.
+$("#cfgThemeColors").addEventListener("input", (e) => {
+  const key = e.target.dataset.color;
+  if (!key) return;
+  Theme.set({ overrides: { ...Theme.state().overrides, [key]: e.target.value } });
+  e.target.closest(".theme-color").classList.add("changed");
+  $("#cfgThemeReset").disabled = false;
+});
+// Al hacer clic en "reset", borra los cambios de color aplicados y vuelve a mostrar los valores originales del tema.
+$("#cfgThemeReset").addEventListener("click", () => {
+  Theme.set({ overrides: {} });
+  renderThemeControls();
+});
+$("#cfgFontFamily").addEventListener("change", (e) => Theme.set({ font: { family: e.target.value } }));
+// Al cambiar el tamaño de fuente, actualiza el estado del tema, pero asegura que el valor mostrado en el input sea el mismo que el actualizado.
+$("#cfgFontSize").addEventListener("change", (e) => {
+  Theme.set({ font: { size: e.target.value } });
+  e.target.value = Theme.state().font.size;
+});
+// Al cambiar la línea de altura, actualiza el estado del tema y asegura que el valor en el input coincida con el actualizado.
+$("#cfgLineHeight").addEventListener("change", (e) => {
+  Theme.set({ font: { lineHeight: e.target.value } });
+  e.target.value = Theme.state().font.lineHeight;
+});
+$("#cfgLigatures").addEventListener("change", (e) => Theme.set({ font: { ligatures: e.target.checked } }));
+
+renderThemeControls();
 
 // ================= Diagnóstico =================
 // El informe vive en localStorage mientras corre: el último paso puede reiniciar

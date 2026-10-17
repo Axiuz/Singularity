@@ -109,16 +109,24 @@
 
   // El alfa entra en las mismas variables de :root y no en una paleta aparte: Monaco solo
   // acepta hex en su tema y xterm lee esas mismas variables.
+  // Obtiene el color base de una superficie del tema activo; si no hay tema, usa el color fijo.
+  const baseOf = (name, base) => (window.Theme && Theme.color(name)) || base;
+
+  // Aplica el efecto de velo usando el color del tema; si el velo está apagado, no borra propiedades para mantener el color del tema.
   function apply() {
     if (!supported || !on) {
       root.removeAttribute("data-veil");
-      GROUPS.forEach((g) => g.surfaces.forEach(([name]) => root.style.removeProperty(name)));
+      GROUPS.forEach((g) =>
+        g.surfaces.forEach(([name, base]) =>
+          window.Theme ? root.style.setProperty(name, baseOf(name, base)) : root.style.removeProperty(name)
+        )
+      );
       return;
     }
     root.setAttribute("data-veil", "");
     GROUPS.forEach((g) =>
       g.surfaces.forEach(([name, base, factor]) => {
-        root.style.setProperty(name, base + alphaHex(levels[g.id] * factor));
+        root.style.setProperty(name, baseOf(name, base) + alphaHex(levels[g.id] * factor));
       })
     );
   }
@@ -129,6 +137,7 @@
     supported,
     groups: GROUPS.map(({ id, label, def }) => ({ id, label, def })),
     enabled: () => supported && on,
+    refresh: apply,
     levels: () => ({ ...levels }),
     level: (id) => levels[id],
     set(next) {
