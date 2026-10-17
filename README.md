@@ -49,15 +49,17 @@ Claude Code ──curl──▶ Orquestador :3131 ──API OpenAI──▶ LM S
 
 ## Empezar en 3 pasos
 
-1. Instala [LM Studio](https://lmstudio.ai), descarga un modelo de ~4B (probado con Qwen3 4B y
-   Gemma 3 4B) y activa su CLI `lms` en *Settings > Developer*.
-2. Instala [Claude Code](https://claude.com/claude-code), de forma que `claude` quede en el PATH.
-3. Descarga el último `Singularity-x.y.z.dmg` de
+1. Instala [Claude Code](https://claude.com/claude-code), de forma que `claude` quede en el PATH
+   (o Antigravity CLI o Codex CLI, que se eligen en Configuración).
+2. Descarga el último `Singularity-x.y.z.dmg` de
    [Releases](https://github.com/Axiuz/Singularity/releases/latest) y arrástralo a Aplicaciones.
    La firma es ad-hoc y no está notarizada: la primera vez, ábrelo con clic derecho > Abrir.
+3. Solo para agentes locales: instala [LM Studio](https://lmstudio.ai), descarga un modelo de ~4B
+   (probado con Qwen3 4B y Gemma 3 4B), activa su CLI `lms` en *Settings > Developer* y usa la
+   edición **Singularity Local** (`Singularity-Local-x.y.z.dmg`). Ver [Ediciones y actualizaciones](#ediciones-y-actualizaciones).
 
-Al abrirse, la app levanta LM Studio, carga el modelo y arranca el orquestador. Al cerrarla
-los detiene y deja la RAM libre. Los datos se guardan en `~/Library/Application Support/Singularity`
+Al abrirse, la app arranca el orquestador; la edición Local además levanta LM Studio y carga el
+modelo. Al cerrarla los detiene y deja la RAM libre. Los datos se guardan en `~/Library/Application Support/Singularity`
 (sobreviven a reinstalar) y los logs en `~/Library/Logs/Singularity/`.
 
 ### Desde el código
@@ -79,11 +81,34 @@ URL en la pestaña Conexión. El mock entiende dos palabras clave dentro del pro
 | `FORZAR_ERROR` | responde 500, para probar el manejo de errores |
 | `FORZAR_RAZONAMIENTO` | manda `reasoning_content` antes de la respuesta |
 
-Para generar tu propio DMG: `bash Scripts/build-dmg.sh` (deja `dist/Singularity-<versión>.dmg`).
+Para generar tu propio DMG: `bash Scripts/build-dmg.sh` (deja `dist/Singularity-<versión>.dmg`),
+o `EDITION=local bash Scripts/build-dmg.sh` para la edición Local.
+
+## Ediciones y actualizaciones
+
+| | Singularity | Singularity Local |
+|---|---|---|
+| Release | `vX.Y.Z` | `local-vX.Y.Z` |
+| DMG | `Singularity-X.Y.Z.dmg` | `Singularity-Local-X.Y.Z.dmg` |
+| LM Studio | No lo necesita ni lo arranca | Obligatorio, con la CLI `lms` activada |
+| Modo por defecto | Solo IA de pago, sin agentes | Agentes locales de LM Studio |
+| Compilar | `bash Scripts/build-dmg.sh` | `EDITION=local bash Scripts/build-dmg.sh` |
+
+El modo por defecto solo cuenta en una instalación nueva: si ya usabas Singularity, conservas tu
+`config.json` y tu modo. En la edición sin LM Studio puedes elegir igualmente el modo local en
+Configuración: si tienes `lms`, la app lo arranca. Las dos ediciones comparten datos (`~/Library/Application Support/Singularity`)
+y el puerto del panel, así que no se abren a la vez.
+
+La app instalada en `/Applications` busca actualizaciones de su edición al abrir y cada 6 h. Si
+hay un release más nuevo te pregunta; con **Actualizar ahora** descarga el DMG, se cierra, se
+sustituye y se vuelve a abrir. También está en el menú **Singularity > Buscar actualizaciones…**.
+El log queda en `~/Library/Logs/Singularity/update.log`. Las versiones publicadas antes de que
+existiera el actualizador no lo traen: la primera con él hay que instalarla a mano.
 
 ## Versiones
 
-Cada push a `main` que pasa los tests publica solo un release `v2.1.N` con el DMG.
+Cada push a `main` que pasa los tests publica dos releases con la misma versión: `v2.1.N`
+(Singularity) y `local-v2.1.N` (Singularity Local).
 Para pasar a 2.2.x se sube el minor a mano en `orquestador-agentes/package.json`.
 Los cambios que solo tocan documentación no sacan release.
 
@@ -452,6 +477,21 @@ También puedes escribir tarjetas tuyas con **+ Agregar la tarea**, con o sin pl
 registrado. Por eso el tablero ahora se guarda en `data/plan.json` y sobrevive a
 reiniciar el servidor; los runs siguen viviendo solo en memoria.
 
+### Apariencia
+
+Está en **Conexión > Apariencia**. Elige un **tema** para el panel, el editor, las terminales y el
+mapa: Singularity (oro), Medianoche (azul), Nord, Dracula, Bosque (verdes) o Monocromo (grises).
+Los **colores** se ajustan por encima del tema: acento, texto del código, palabras clave, textos,
+números, comentarios, funciones, tipos, variables, constantes y etiquetas. Se mantienen al cambiar
+de tema; los cambiados llevan un punto y **Restablecer colores del tema** los quita.
+Elige la **fuente del código**: SF Mono, Menlo, IBM Plex Mono, JetBrains Mono o Fira Code, con
+tamaño de 10 a 24 e interlineado de 1.2 a 2.2. Vale para el editor y las dos terminales. Las
+**ligaduras** vienen apagadas.
+El **fondo translúcido** usa los colores del tema activo.
+Todo se aplica al momento, sin Guardar, y se guarda en este Mac (`localStorage`), no en `config.json`.
+No hay tema claro: la ventana de macOS va en modo oscuro. Si hay un tema de una extensión VSIX
+activo, sus colores mandan sobre los del editor.
+
 ### El editor
 
 La pestaña **Editor** trae Monaco, el mismo editor que usa VS Code: árbol de
@@ -748,11 +788,12 @@ orquestador-agentes/          raíz del repo
     runners.js                cómo compilar, ejecutar y depurar un archivo según su extensión
     dap.js                    cliente del Debug Adapter Protocol: la ejecución en marcha
     jsdap.js                  adaptador DAP propio para JS y TS sobre el inspector de Node
+    update.js                 busca en GitHub un release más nuevo de la edición instalada
     session.js                CLI y modo de trabajo de la pestaña Sesión: comando y partes de las instrucciones
     claudeusage.js            tokens que gasta Claude Code, leídos de sus transcripts
     safepath.js               contención de rutas del editor
     public/                   panel: index.html, styles.css, app.js, graph.js,
-                              editor.js, preview.js, split.js,
+                              editor.js, preview.js, split.js, theme.js, veil.js,
                               browser.js, browserurl.js
     data/                     agents.json, config.json (y plan.json, projects.json,
                               commitplans.json, notes.json, ignorados por git)
@@ -762,7 +803,8 @@ orquestador-agentes/          raíz del repo
   macos/
     Singularity.swift         ventana nativa (WKWebView), portapapeles, selector de carpeta
                               y las vistas del navegador integrado
-    launcher.sh               arranca/detiene LM Studio y el orquestador
+    launcher.sh               arranca/detiene el orquestador y, si toca, LM Studio
+    updater.sh                instala una actualización descargada y reabre la app
     make-icon.swift, logo.jpg icono de la app
   Scripts/build-dmg.sh        compila la app y genera el .dmg
 ```
