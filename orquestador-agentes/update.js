@@ -1,5 +1,5 @@
 // Busca el release más reciente en GitHub de Axiuz/Singularity para la edición actual
-// (v2.1.N o local-v2.1.N), compara su versión con la instalada y devuelve si hay una
+// (v2.1.N o ai-v2.1.N), compara su versión con la instalada y devuelve si hay una
 // versión más reciente. Se usa en la ruta GET /api/update para permitir a la app nativa
 // ofrecer una actualización.
 
@@ -7,8 +7,8 @@ const REPO = "Axiuz/Singularity";
 const CACHE_MS = 10 * 60 * 1000;
 
 const EDITIONS = {
-  cloud: { tag: /^v(\d+\.\d+\.\d+)$/, asset: (v) => `Singularity-${v}.dmg` },
-  local: { tag: /^local-v(\d+\.\d+\.\d+)$/, asset: (v) => `Singularity-Local-${v}.dmg` },
+  cloud: { tag: /^ai-v(\d+\.\d+\.\d+)$/, asset: (v) => `Singularity-AI-Subscription-${v}.dmg` },
+  local: { tag: /^v(\d+\.\d+\.\d+)$/, asset: (v) => `Singularity-${v}.dmg` },
 };
 
 // Compara dos versiones en formato x.y.z, devolviendo -1, 0 o 1 según si a <, = o > b.

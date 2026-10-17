@@ -1,7 +1,7 @@
 #!/bin/bash
 # Genera dist/Singularity-<versión>.dmg con herramientas que ya trae macOS.
-# Uso: bash Scripts/build-dmg.sh                (edición sin LM Studio)
-#      EDITION=local bash Scripts/build-dmg.sh  (Singularity Local, con LM Studio)
+# Uso: bash Scripts/build-dmg.sh                (Singularity, con LM Studio)
+#      EDITION=cloud bash Scripts/build-dmg.sh  (Singularity AI Subscription, sin LM Studio)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,10 +9,10 @@ SRC="$ROOT/orquestador-agentes"
 DIST="$ROOT/dist"
 # Se compila aparte y se cambia al final: un rebuild lanzado desde el propio
 # panel borraría la app que lo está ejecutando si trabajáramos sobre dist.
-EDITION="${EDITION:-cloud}"
+EDITION="${EDITION:-local}"
 case "$EDITION" in
-  cloud) NAME="Singularity" DMG_PREFIX="Singularity" ;;
-  local) NAME="Singularity Local" DMG_PREFIX="Singularity-Local" ;;
+  cloud) NAME="Singularity AI Subscription" DMG_PREFIX="Singularity-AI-Subscription" ;;
+  local) NAME="Singularity" DMG_PREFIX="Singularity" ;;
   *) echo "EDITION tiene que ser cloud o local" >&2; exit 1 ;;
 esac
 WORK="$DIST/.next-$EDITION"
